@@ -76,8 +76,8 @@
             let locationId = null;
 
             // !! IMPORTANT !!
-            // You must replace this with the URL of your Render Web Service after you deploy it.
-            const API_PROXY_URL = 'https://your-backend-service-url.onrender.com';
+            // This has been updated with your specific Render URL.
+            const API_PROXY_URL = 'https://square-checkin-backend.onrender.com';
 
             const showLoader = (message) => { Object.values(stages).forEach(s => s.classList.remove('active-stage')); loader.querySelector('p').textContent = message || 'Processing...'; loader.style.display = 'flex'; errorBox.style.display = 'none'; };
             const hideLoader = () => loader.style.display = 'none';
