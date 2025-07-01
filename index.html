@@ -3,406 +3,228 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Square Customer Group Lookup</title>
+    <title>Customer Check-In</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-        }
-        /* Simple spinner for loading states */
-        .spinner {
-            border: 4px solid rgba(0, 0, 0, 0.1);
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            border-left-color: #06b6d4;
-            animation: spin 1s ease infinite;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+        body { font-family: 'Inter', sans-serif; }
+        .stage { display: none; }
+        .active-stage { display: block; }
+        .spinner { border: 4px solid rgba(0, 0, 0, 0.1); width: 36px; height: 36px; border-radius: 50%; border-left-color: #06b6d4; animation: spin 1s ease infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
 
-    <div class="w-full max-w-6xl mx-auto bg-white p-8 rounded-2xl shadow-lg">
-        <div class="text-center mb-8">
-            <h1 class="text-3xl font-bold text-gray-800">Square Customer Group Lookup</h1>
-            <p class="text-gray-500 mt-2">Enter your Square Access Token, then search for a customer to see all their group and segment memberships.</p>
-        </div>
+    <div class="w-full max-w-xl mx-auto bg-white p-8 rounded-2xl shadow-lg text-center">
 
-        <!-- Step 1: API Token Input -->
-        <div id="token-section" class="mb-6">
-            <label for="square-token" class="block text-sm font-medium text-gray-700 mb-2">Square Access Token</label>
+        <div id="stage-setup" class="stage active-stage">
+            <h1 class="text-3xl font-bold text-gray-800">Admin Setup</h1>
+            <p class="text-gray-500 mt-2 mb-6">Please enter the Square Access Token to activate this kiosk.</p>
             <div class="flex items-center space-x-3">
-                <input type="password" id="square-token" class="flex-grow block w-full px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md focus:border-cyan-500 focus:ring-cyan-500 focus:ring-opacity-50" placeholder="Your Square Access Token">
-                <button id="save-token-btn" class="px-6 py-2 text-white bg-cyan-600 rounded-md hover:bg-cyan-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-colors">Save</button>
+                <input type="password" id="square-token" class="flex-grow block w-full px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md" placeholder="Square Access Token">
+                <button id="save-token-btn" class="px-6 py-2 text-white bg-cyan-600 rounded-md hover:bg-cyan-700">Save</button>
             </div>
-            <p class="text-xs text-gray-500 mt-2">
-                <strong>Security Note:</strong> Your token is stored only in your browser for this session. For production apps, always handle tokens on a secure backend server.
-            </p>
         </div>
-        
-        <!-- App Content - Initially Hidden -->
-        <div id="app-content" class="hidden">
-            <!-- Step 2: Customer Search -->
-            <div id="search-section" class="mb-6">
-                <div class="flex items-end space-x-3">
-                    <div class="flex-grow">
-                        <label for="search-value" class="block text-sm font-medium text-gray-700 mb-2">Search Term</label>
-                        <input type="text" id="search-value" class="block w-full px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md focus:border-cyan-500 focus:ring-cyan-500 focus:ring-opacity-50" placeholder="Enter email or phone number">
-                    </div>
-                    <div>
-                        <label for="search-type" class="block text-sm font-medium text-gray-700 mb-2">Search By</label>
-                        <select id="search-type" class="block w-full px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md focus:border-cyan-500 focus:ring-cyan-500">
-                            <option value="email">Email</option>
-                            <option value="phone">Phone Number</option>
-                        </select>
-                    </div>
-                    <button id="search-btn" class="px-6 py-2 text-white bg-cyan-600 rounded-md hover:bg-cyan-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-colors">Search</button>
-                </div>
-            </div>
 
-            <!-- Step 3: Results and Groups Display -->
-            <div class="grid grid-cols-1 gap-6">
-                 <!-- Customer Results -->
-                <div>
-                    <h2 class="text-xl font-semibold text-gray-800 mb-4">Search Results</h2>
-                    <div id="results-container" class="bg-gray-50 p-4 rounded-lg min-h-[150px] border">
-                        <p class="text-gray-500 text-center py-12">Search for a customer to see results here.</p>
-                    </div>
-                </div>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
-                <!-- Current Memberships -->
-                <div>
-                    <h2 class="text-xl font-semibold text-gray-800 mb-4">Current Memberships</h2>
-                    <div id="current-memberships-container" class="bg-cyan-50 border-cyan-200 p-4 rounded-lg min-h-[200px] border">
-                         <p class="text-gray-500 text-center py-16">Select a customer to view memberships.</p>
-                    </div>
-                </div>
-                <!-- Other Manual Groups -->
-                <div>
-                    <h2 class="text-xl font-semibold text-gray-800 mb-4">Other Manual Groups</h2>
-                    <div id="manual-groups-container" class="bg-gray-50 p-4 rounded-lg min-h-[200px] border">
-                         <p class="text-gray-500 text-center py-16">Select a customer to view groups.</p>
-                    </div>
-                </div>
-                <!-- Other Smart Groups (Segments) -->
-                <div>
-                    <h2 class="text-xl font-semibold text-gray-800 mb-4">Other Smart Groups</h2>
-                    <div id="other-segments-container" class="bg-gray-50 p-4 rounded-lg min-h-[200px] border">
-                         <p class="text-gray-500 text-center py-16">Select a customer to view segments.</p>
-                    </div>
-                </div>
+        <div id="stage-1-search" class="stage">
+            <h1 class="text-4xl font-bold text-gray-800">Customer Check-In</h1>
+            <p class="text-gray-500 mt-2 mb-8">Please enter your phone number to begin.</p>
+            <div class="flex items-center space-x-3">
+                <input type="tel" id="search-value" class="flex-grow block w-full px-4 py-3 text-2xl text-center text-gray-700 bg-white border border-gray-300 rounded-md" placeholder="e.g., (415) 555-1234">
+                <button id="search-btn" class="px-8 py-3 text-white bg-cyan-600 rounded-md hover:bg-cyan-700 text-xl">Search</button>
             </div>
         </div>
         
-        <!-- Loading Indicator -->
+        <div id="stage-2-results" class="stage">
+            <h1 class="text-4xl font-bold text-gray-800">Is this you?</h1>
+            <p class="text-gray-500 mt-2 mb-8">Please tap your name to confirm.</p>
+            <div id="results-list" class="space-y-4"></div>
+            <button id="back-to-search-btn" class="mt-8 px-6 py-2 text-gray-600 bg-gray-200 rounded-md hover:bg-gray-300">Back to Search</button>
+        </div>
+        
+        <div id="stage-3-welcome" class="stage">
+            <div id="welcome-message" class="mb-8"></div>
+            <div id="purchase-status" class="mt-4 text-lg"></div>
+            <button id="start-over-btn" class="w-full px-8 py-4 text-white bg-cyan-600 rounded-md hover:bg-cyan-700 text-xl mt-8">Done</button>
+        </div>
+
         <div id="loader" class="hidden items-center justify-center mt-6">
             <div class="spinner"></div>
-            <p class="ml-4 text-gray-600">Fetching data from Square...</p>
+            <p class="ml-4 text-gray-600">Please wait...</p>
         </div>
-        
-        <!-- Error Message Box -->
         <div id="error-box" class="hidden mt-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded-md"></div>
-
     </div>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            // --- DOM Element References ---
-            const tokenSection = document.getElementById('token-section');
-            const appContent = document.getElementById('app-content');
+            const stages = { setup: document.getElementById('stage-setup'), search: document.getElementById('stage-1-search'), results: document.getElementById('stage-2-results'), welcome: document.getElementById('stage-3-welcome') };
             const saveTokenBtn = document.getElementById('save-token-btn');
             const searchBtn = document.getElementById('search-btn');
-            const resultsContainer = document.getElementById('results-container');
-            const manualGroupsContainer = document.getElementById('manual-groups-container');
-            const otherSegmentsContainer = document.getElementById('other-segments-container');
-            const currentMembershipsContainer = document.getElementById('current-memberships-container');
+            const resultsList = document.getElementById('results-list');
+            const welcomeMessageContainer = document.getElementById('welcome-message');
+            const purchaseStatusContainer = document.getElementById('purchase-status');
+            const startOverBtn = document.getElementById('start-over-btn');
+            const backToSearchBtn = document.getElementById('back-to-search-btn');
             const loader = document.getElementById('loader');
             const errorBox = document.getElementById('error-box');
 
-            // --- State Variables ---
             let squareAccessToken = null;
-            let allGroupsMap = new Map();
             let allSegmentsMap = new Map();
+            let selectedCustomer = null;
+            let checkInItemId = null;
+            let locationId = null;
 
-            // --- API Configuration ---
-            const PROXY_URL = 'https://cors-anywhere.herokuapp.com/';
-            const SQUARE_API_BASE = 'https://connect.squareup.com/v2';
+            // UPDATED: The URL for our new backend function.
+            const API_PROXY_URL = '/.netlify/functions/square-proxy';
 
-            // --- Utility Functions ---
-            const showLoader = (message) => {
-                loader.querySelector('p').textContent = message || 'Processing...';
-                loader.style.display = 'flex';
-                errorBox.style.display = 'none';
-            };
-
-            const hideLoader = () => {
-                loader.style.display = 'none';
-            };
+            const showLoader = (message) => { Object.values(stages).forEach(s => s.classList.remove('active-stage')); loader.querySelector('p').textContent = message || 'Processing...'; loader.style.display = 'flex'; errorBox.style.display = 'none'; };
+            const hideLoader = () => loader.style.display = 'none';
+            const showError = (message) => { errorBox.textContent = `Error: ${message}`; errorBox.style.display = 'block'; };
+            const hideError = () => errorBox.style.display = 'none';
+            const showStage = (stageName) => { hideLoader(); hideError(); Object.values(stages).forEach(s => s.classList.remove('active-stage')); if (stages[stageName]) stages[stageName].classList.add('active-stage'); };
             
-            const showError = (message) => {
-                errorBox.textContent = `Error: ${message}`;
-                errorBox.style.display = 'block';
-                hideLoader();
-            };
+            // This is a new helper function to make all our API calls.
+            const apiFetch = async (endpoint, options = {}) => {
+                const response = await fetch(`${API_PROXY_URL}${endpoint}`, {
+                    ...options,
+                    headers: {
+                        ...options.headers,
+                        'x-square-access-token': squareAccessToken, // Send token in a custom header
+                        'Content-Type': 'application/json',
+                    },
+                });
 
-            const hideError = () => {
-                errorBox.style.display = 'none';
-            };
-
-            // --- Core Logic Functions ---
-
-            /**
-             * Fetches all data (groups and segments) needed for the app to run.
-             */
-            const fetchInitialData = async () => {
-                if (!squareAccessToken) {
-                    showError('Access Token is not set.');
-                    return;
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.errors?.[0]?.detail || data.error || 'An API error occurred.');
                 }
-                showLoader('Fetching groups and segments...');
+                return data;
+            };
 
+            const fetchInitialData = async () => {
+                showLoader('Activating kiosk and fetching catalog...');
                 try {
-                    // Use Promise.all to fetch both groups and segments concurrently
-                    await Promise.all([
-                        fetchAllGroups(),
-                        fetchAllSegments()
-                    ]);
-
-                    hideLoader();
-                    hideError();
-                    tokenSection.style.display = 'none';
-                    appContent.style.display = 'block';
-
+                    await Promise.all([ fetchAllSegments(), findCheckInItem(), fetchLocationId() ]);
+                    showStage('search');
                 } catch (error) {
                     showError(error.message);
-                    squareAccessToken = null; 
-                }
-            };
-
-            /**
-             * Fetches all customer groups from the Square account.
-             */
-            const fetchAllGroups = async () => {
-                const response = await fetch(`${PROXY_URL}${SQUARE_API_BASE}/customers/groups`, {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${squareAccessToken}`,
-                        'Square-Version': '2023-10-18',
-                        'Content-Type': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                });
-
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    throw new Error(errorData.errors?.[0]?.detail || 'Failed to fetch groups.');
-                }
-
-                const data = await response.json();
-                allGroupsMap.clear();
-                if (data.groups) {
-                    data.groups.forEach(group => {
-                        allGroupsMap.set(group.id, group.name);
-                    });
+                    showStage('setup');
                 }
             };
             
-            /**
-             * Fetches all customer segments (smart groups) from the Square account.
-             */
             const fetchAllSegments = async () => {
-                const response = await fetch(`${PROXY_URL}${SQUARE_API_BASE}/customers/segments`, {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${squareAccessToken}`,
-                        'Square-Version': '2023-10-18',
-                        'Content-Type': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                });
-
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    throw new Error(errorData.errors?.[0]?.detail || 'Failed to fetch segments.');
-                }
-
-                const data = await response.json();
+                const data = await apiFetch('/v2/customers/segments');
                 allSegmentsMap.clear();
-                if (data.segments) {
-                    data.segments.forEach(segment => {
-                        allSegmentsMap.set(segment.id, segment.name);
-                    });
-                }
+                if (data.segments) data.segments.forEach(s => allSegmentsMap.set(s.id, s.name));
             };
 
-            /**
-             * Searches for customers based on the selected search type and value.
-             */
+            const findCheckInItem = async () => {
+                const data = await apiFetch('/v2/catalog/search', {
+                    method: 'POST',
+                    body: JSON.stringify({ object_types: ["ITEM"], query: { text_query: { keywords: ["Check-In"] } } })
+                });
+                const checkInItem = data.objects?.find(obj => obj.item_data.name.toLowerCase() === 'check-in');
+                if (!checkInItem || !checkInItem.item_data.variations?.[0]?.id) {
+                    throw new Error('Could not find a "Check-In" item in your Square catalog.');
+                }
+                checkInItemId = checkInItem.item_data.variations[0].id;
+            };
+
+            const fetchLocationId = async () => {
+                const data = await apiFetch('/v2/locations');
+                const activeLocation = data.locations?.find(loc => loc.status === 'ACTIVE');
+                if (!activeLocation) throw new Error('No active location found for this business.');
+                locationId = activeLocation.id;
+            };
+
             const searchCustomers = async () => {
                 const searchValue = document.getElementById('search-value').value.trim();
-                const searchType = document.getElementById('search-type').value;
-
-                if (!searchValue) {
-                    showError('Please enter a search term.');
-                    return;
-                }
-                showLoader('Searching for customer...');
-                resultsContainer.innerHTML = '';
-                manualGroupsContainer.innerHTML = '<p class="text-gray-500 text-center py-16">Select a customer to view groups.</p>';
-                otherSegmentsContainer.innerHTML = '<p class="text-gray-500 text-center py-16">Select a customer to view segments.</p>';
-                currentMembershipsContainer.innerHTML = '<p class="text-gray-500 text-center py-16">Select a customer to view memberships.</p>';
-                
-                const filter = {};
-                
-                if (searchType === 'email') {
-                    filter.email_address = { exact: searchValue };
-                } else if (searchType === 'phone') {
-                    let formattedPhone = searchValue.replace(/\D/g, '');
-                    if (formattedPhone.length === 10) {
-                        formattedPhone = `+1${formattedPhone}`;
-                    } else if (formattedPhone.length === 11 && formattedPhone.startsWith('1')) {
-                         formattedPhone = `+${formattedPhone}`;
-                    } else if (!searchValue.startsWith('+')) {
-                        formattedPhone = `+${formattedPhone}`;
-                    }
-                    filter.phone_number = { exact: formattedPhone };
-                }
-
+                if (!searchValue) return;
+                showLoader('Searching...');
+                let formattedPhone = searchValue.replace(/\D/g, '');
+                if (formattedPhone.length === 10) formattedPhone = `+1${formattedPhone}`;
+                else if (!searchValue.startsWith('+')) formattedPhone = `+${formattedPhone}`;
+                else formattedPhone = `+${formattedPhone.substring(1)}`;
                 try {
-                    const response = await fetch(`${PROXY_URL}${SQUARE_API_BASE}/customers/search`, {
+                    const data = await apiFetch('/v2/customers/search', {
                         method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${squareAccessToken}`,
-                            'Square-Version': '2023-10-18',
-                            'Content-Type': 'application/json',
-                            'X-Requested-With': 'XMLHttpRequest'
-                        },
-                        body: JSON.stringify({
-                            query: {
-                                filter: filter
-                            }
-                        })
+                        body: JSON.stringify({ query: { filter: { phone_number: { exact: formattedPhone } } } })
                     });
-
-                    if (!response.ok) {
-                        const errorData = await response.json();
-                        throw new Error(errorData.errors?.[0]?.detail || 'Failed to search for customer.');
-                    }
-
-                    const data = await response.json();
                     displayCustomerResults(data.customers || []);
-                    hideLoader();
-                    hideError();
-
+                    showStage('results');
                 } catch (error) {
                     showError(error.message);
-                    resultsContainer.innerHTML = `<p class="text-red-500 text-center p-4">${error.message}</p>`;
+                    showStage('search');
                 }
             };
             
-            /**
-             * Renders the list of found customers in the UI.
-             */
             const displayCustomerResults = (customers) => {
-                resultsContainer.innerHTML = '';
+                resultsList.innerHTML = '';
                 if (customers.length === 0) {
-                    resultsContainer.innerHTML = '<p class="text-gray-500 text-center p-4">No customers found.</p>';
+                    resultsList.innerHTML = '<p class="text-gray-500 text-center p-4">No customers found with that phone number.</p>';
                     return;
                 }
-
-                const list = document.createElement('ul');
-                list.className = 'space-y-2';
                 customers.forEach(customer => {
-                    const listItem = document.createElement('li');
                     const button = document.createElement('button');
-                    button.className = 'w-full text-left p-3 bg-white border rounded-md hover:bg-cyan-50 hover:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all';
-                    button.innerHTML = `
-                        <p class="font-semibold text-gray-800">${customer.given_name || ''} ${customer.family_name || ''}</p>
-                        <p class="text-sm text-gray-500">${customer.email_address || 'No email'}</p>
-                        <p class="text-sm text-gray-500">${customer.phone_number || 'No phone'}</p>
-                    `;
-                    button.dataset.groupIds = JSON.stringify(customer.group_ids || []);
-                    button.dataset.segmentIds = JSON.stringify(customer.segment_ids || []);
-                    listItem.appendChild(button);
-                    list.appendChild(listItem);
+                    button.className = 'w-full text-center p-4 bg-white border-2 border-gray-300 rounded-md hover:border-cyan-500 focus:border-cyan-500 transition-all text-2xl font-semibold';
+                    button.textContent = `${customer.given_name || ''} ${customer.family_name || ''}`;
+                    button.onclick = async () => {
+                        selectedCustomer = customer;
+                        showStage('welcome');
+                        displayWelcomeMessage();
+                        await createCheckInPurchase();
+                    };
+                    resultsList.appendChild(button);
                 });
-                resultsContainer.appendChild(list);
             };
 
-            /**
-             * Displays the names of the groups/segments a customer belongs to.
-             * @param {HTMLElement} container - The container element to display the list in.
-             * @param {Array} ids - An array of group or segment ID strings.
-             * @param {Map} map - The map containing the ID-to-name mappings.
-             * @param {string} type - The type of membership ('group' or 'segment').
-             */
-            const displayMemberships = (container, ids, map, type) => {
-                container.innerHTML = '';
-                if (ids.length === 0) {
-                    container.innerHTML = `<p class="text-gray-500 text-center p-4">This customer does not belong to any ${type}s.</p>`;
-                    return;
+            const displayWelcomeMessage = () => {
+                if (!selectedCustomer) return;
+                const segmentIds = selectedCustomer.segment_ids || [];
+                const thankYouMessages = [];
+                segmentIds.forEach(id => {
+                    const name = allSegmentsMap.get(id) || '';
+                    if (name.toLowerCase().includes('current')) {
+                        const modifiedName = name.replace(/current/i, '').trim();
+                        const article = /^[aeiou]/i.test(modifiedName) ? 'an' : 'a';
+                        thankYouMessages.push(`Thank you for being ${article} ${modifiedName}`);
+                    }
+                });
+                let membershipHTML = '<p class="text-2xl text-red-500">No Current Membership Found</p>';
+                if (thankYouMessages.length > 0) {
+                    membershipHTML = thankYouMessages.map(message => `<li class="text-2xl font-medium text-gray-700 list-none">${message}</li>`).join('');
+                    membershipHTML = `<ul class="space-y-2">${membershipHTML}</ul>`;
                 }
-
-                const list = document.createElement('ul');
-                list.className = 'space-y-2';
-                ids.forEach(id => {
-                    const name = map.get(id) || `Unknown ${type} (ID: ${id})`;
-                    const listItem = document.createElement('li');
-                    listItem.className = 'p-3 bg-white border rounded-md text-gray-700';
-                    listItem.textContent = name;
-                    list.appendChild(listItem);
-                });
-                container.appendChild(list);
+                welcomeMessageContainer.innerHTML = `<h1 class="text-5xl font-bold text-gray-800 mb-4">Welcome, ${selectedCustomer.given_name || ''}!</h1>${membershipHTML}`;
             };
 
-            // --- Event Listeners ---
+            const createCheckInPurchase = async () => {
+                purchaseStatusContainer.innerHTML = `<div class="flex items-center justify-center text-gray-500"><div class="spinner mr-2"></div>Recording check-in...</div>`;
+                try {
+                    const orderPayload = { idempotency_key: crypto.randomUUID(), order: { location_id: locationId, customer_id: selectedCustomer.id, line_items: [{ catalog_object_id: checkInItemId, quantity: '1' }] } };
+                    const orderData = await apiFetch('/v2/orders', { method: 'POST', body: JSON.stringify(orderPayload) });
+                    const payPayload = { idempotency_key: crypto.randomUUID(), payment_ids: [] };
+                    await apiFetch(`/v2/orders/${orderData.order.id}/pay`, { method: 'POST', body: JSON.stringify(payPayload) });
+                    
+                    purchaseStatusContainer.textContent = 'Check-in recorded successfully!';
+                    purchaseStatusContainer.className = 'mt-4 text-lg text-green-600 font-semibold';
+                } catch (error) {
+                    purchaseStatusContainer.textContent = `Could not record check-in: ${error.message}`;
+                    purchaseStatusContainer.className = 'mt-4 text-lg text-red-600 font-semibold';
+                }
+            };
+
             saveTokenBtn.addEventListener('click', () => {
                 const tokenInput = document.getElementById('square-token');
                 squareAccessToken = tokenInput.value.trim();
-                if (squareAccessToken) {
-                    fetchInitialData();
-                } else {
-                    showError('Please enter a valid Square Access Token.');
-                }
+                if (squareAccessToken) fetchInitialData();
+                else showError('Please enter a valid Square Access Token.');
             });
 
             searchBtn.addEventListener('click', searchCustomers);
-            
-            resultsContainer.addEventListener('click', (e) => {
-                const button = e.target.closest('button');
-                if (button) {
-                    document.querySelectorAll('#results-container button').forEach(btn => {
-                        btn.classList.remove('bg-cyan-100', 'border-cyan-500');
-                    });
-                    button.classList.add('bg-cyan-100', 'border-cyan-500');
-
-                    const groupIds = JSON.parse(button.dataset.groupIds);
-                    const segmentIds = JSON.parse(button.dataset.segmentIds);
-                    
-                    const currentSegmentIds = [];
-                    const otherSegmentIds = [];
-
-                    // Sort segments into "Current" and "Other"
-                    segmentIds.forEach(id => {
-                        const name = allSegmentsMap.get(id) || '';
-                        if (name.toLowerCase().includes('current')) {
-                            currentSegmentIds.push(id);
-                        } else {
-                            otherSegmentIds.push(id);
-                        }
-                    });
-                    
-                    displayMemberships(currentMembershipsContainer, currentSegmentIds, allSegmentsMap, 'membership');
-                    displayMemberships(manualGroupsContainer, groupIds, allGroupsMap, 'group');
-                    displayMemberships(otherSegmentsContainer, otherSegmentIds, allSegmentsMap, 'segment');
-                }
-            });
+            startOverBtn.addEventListener('click', () => { document.getElementById('search-value').value = ''; selectedCustomer = null; showStage('search'); });
+            backToSearchBtn.addEventListener('click', () => { document.getElementById('search-value').value = ''; selectedCustomer = null; showStage('search'); });
         });
     </script>
 </body>
