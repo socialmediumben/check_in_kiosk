@@ -75,8 +75,9 @@
             let checkInItemId = null;
             let locationId = null;
 
-            // UPDATED: The URL for our new backend function.
-            const API_PROXY_URL = '/.netlify/functions/square-proxy';
+            // !! IMPORTANT !!
+            // You must replace this with the URL of your Render Web Service after you deploy it.
+            const API_PROXY_URL = 'https://your-backend-service-url.onrender.com';
 
             const showLoader = (message) => { Object.values(stages).forEach(s => s.classList.remove('active-stage')); loader.querySelector('p').textContent = message || 'Processing...'; loader.style.display = 'flex'; errorBox.style.display = 'none'; };
             const hideLoader = () => loader.style.display = 'none';
@@ -84,21 +85,17 @@
             const hideError = () => errorBox.style.display = 'none';
             const showStage = (stageName) => { hideLoader(); hideError(); Object.values(stages).forEach(s => s.classList.remove('active-stage')); if (stages[stageName]) stages[stageName].classList.add('active-stage'); };
             
-            // This is a new helper function to make all our API calls.
             const apiFetch = async (endpoint, options = {}) => {
-                const response = await fetch(`${API_PROXY_URL}${endpoint}`, {
+                const response = await fetch(`${API_PROXY_URL}/api${endpoint}`, {
                     ...options,
                     headers: {
                         ...options.headers,
-                        'x-square-access-token': squareAccessToken, // Send token in a custom header
+                        'x-square-access-token': squareAccessToken,
                         'Content-Type': 'application/json',
                     },
                 });
-
                 const data = await response.json();
-                if (!response.ok) {
-                    throw new Error(data.errors?.[0]?.detail || data.error || 'An API error occurred.');
-                }
+                if (!response.ok) throw new Error(data.errors?.[0]?.detail || data.error || 'An API error occurred.');
                 return data;
             };
 
@@ -125,9 +122,7 @@
                     body: JSON.stringify({ object_types: ["ITEM"], query: { text_query: { keywords: ["Check-In"] } } })
                 });
                 const checkInItem = data.objects?.find(obj => obj.item_data.name.toLowerCase() === 'check-in');
-                if (!checkInItem || !checkInItem.item_data.variations?.[0]?.id) {
-                    throw new Error('Could not find a "Check-In" item in your Square catalog.');
-                }
+                if (!checkInItem || !checkInItem.item_data.variations?.[0]?.id) throw new Error('Could not find a "Check-In" item in your Square catalog.');
                 checkInItemId = checkInItem.item_data.variations[0].id;
             };
 
