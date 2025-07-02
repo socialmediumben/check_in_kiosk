@@ -138,28 +138,23 @@
 
                     console.log(`Step 3: Found category! ID: ${category.id}. Now searching for items inside it.`);
 
-                    const itemsData = await apiFetch('/v2/catalog/search', {
+                    // UPDATED: Using the /v2/catalog/search-catalog-items endpoint for a more direct search.
+                    const itemsData = await apiFetch('/v2/catalog/search-catalog-items', {
                         method: 'POST',
                         body: JSON.stringify({
-                            object_types: ["ITEM"],
-                            query: {
-                                "exact_query": {
-                                    "attribute_name": "category_id",
-                                    "attribute_value": category.id
-                                }
-                            }
+                            "category_ids": [category.id]
                         })
                     });
 
-                    if (!itemsData.objects || itemsData.objects.length === 0) {
+                    if (!itemsData.items || itemsData.items.length === 0) {
                         console.error(`--> FAILURE: Found the category, but it contains no items.`);
                         clubCheckInItems = [];
                         return;
                     }
 
-                    console.log(`Step 4: Found ${itemsData.objects.length} items in the category.`);
+                    console.log(`Step 4: Found ${itemsData.items.length} items in the category.`);
                     
-                    clubCheckInItems = itemsData.objects?.map(item => ({
+                    clubCheckInItems = itemsData.items?.map(item => ({
                         name: item.item_data.name,
                         id: item.item_data.variations?.[0]?.id
                     })).filter(item => item.id) || [];
