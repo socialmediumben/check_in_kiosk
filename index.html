@@ -117,10 +117,11 @@
                         method: 'POST',
                         body: JSON.stringify({ object_types: ["CATEGORY"] })
                     });
-                    const category = categoryData.objects?.find(obj => obj.category_data.name.toLowerCase() === 'club check-ins');
+                    // UPDATED to search for the parent category "Check-Ins" as a test.
+                    const category = categoryData.objects?.find(obj => obj.category_data.name.toLowerCase() === 'check-ins');
                     
                     if (!category) {
-                        console.warn('"Club Check-Ins" category not found. Skipping additional check-in options.');
+                        console.warn('"Check-Ins" category not found. Skipping additional check-in options.');
                         clubCheckInItems = [];
                         return;
                     }
