@@ -10,7 +10,7 @@
         body { font-family: 'Inter', sans-serif; }
         .stage { display: none; }
         .active-stage { display: block; }
-        .spinner { border: 4px solid rgba(0, 0, 0, 0.1); width: 36px; height: 36px; border-radius: 50%; border-left-color: #06b6d4; animation: spin 1s ease infinite; }
+        .spinner { border: 4px solid rgba(0, 0, 0, 0.1); width: 24px; height: 24px; border-radius: 50%; border-left-color: #fff; animation: spin 1s ease infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
@@ -45,7 +45,7 @@
         
         <div id="stage-3-welcome" class="stage">
             <div id="welcome-message" class="mb-8"></div>
-            <div id="purchase-status" class="mt-4 text-lg"></div>
+            <div id="club-check-ins-container" class="mt-8"></div>
             <button id="start-over-btn" class="w-full px-8 py-4 text-white bg-cyan-600 rounded-md hover:bg-cyan-700 text-xl mt-8">Done</button>
         </div>
 
@@ -63,7 +63,7 @@
             const searchBtn = document.getElementById('search-btn');
             const resultsList = document.getElementById('results-list');
             const welcomeMessageContainer = document.getElementById('welcome-message');
-            const purchaseStatusContainer = document.getElementById('purchase-status');
+            const clubCheckInsContainer = document.getElementById('club-check-ins-container');
             const startOverBtn = document.getElementById('start-over-btn');
             const backToSearchBtn = document.getElementById('back-to-search-btn');
             const loader = document.getElementById('loader');
@@ -72,11 +72,9 @@
             let squareAccessToken = null;
             let allSegmentsMap = new Map();
             let selectedCustomer = null;
-            let checkInItemId = null;
+            let clubCheckInItems = [];
             let locationId = null;
 
-            // !! IMPORTANT !!
-            // This has been updated with your specific Render URL.
             const API_PROXY_URL = 'https://square-checkin-backend.onrender.com';
 
             const showLoader = (message) => { Object.values(stages).forEach(s => s.classList.remove('active-stage')); loader.querySelector('p').textContent = message || 'Processing...'; loader.style.display = 'flex'; errorBox.style.display = 'none'; };
@@ -88,11 +86,7 @@
             const apiFetch = async (endpoint, options = {}) => {
                 const response = await fetch(`${API_PROXY_URL}/api${endpoint}`, {
                     ...options,
-                    headers: {
-                        ...options.headers,
-                        'x-square-access-token': squareAccessToken,
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { ...options.headers, 'x-square-access-token': squareAccessToken, 'Content-Type': 'application/json' },
                 });
                 const data = await response.json();
                 if (!response.ok) throw new Error(data.errors?.[0]?.detail || data.error || 'An API error occurred.');
@@ -102,7 +96,7 @@
             const fetchInitialData = async () => {
                 showLoader('Activating kiosk and fetching catalog...');
                 try {
-                    await Promise.all([ fetchAllSegments(), findCheckInItem(), fetchLocationId() ]);
+                    await Promise.all([ fetchAllSegments(), fetchClubCheckInItems(), fetchLocationId() ]);
                     showStage('search');
                 } catch (error) {
                     showError(error.message);
@@ -116,14 +110,29 @@
                 if (data.segments) data.segments.forEach(s => allSegmentsMap.set(s.id, s.name));
             };
 
-            const findCheckInItem = async () => {
-                const data = await apiFetch('/v2/catalog/search', {
+            const fetchClubCheckInItems = async () => {
+                // First, find the category ID for "Club Check-Ins"
+                const categoryData = await apiFetch('/v2/catalog/search', {
                     method: 'POST',
-                    body: JSON.stringify({ object_types: ["ITEM"], query: { text_query: { keywords: ["Check-In"] } } })
+                    body: JSON.stringify({ object_types: ["CATEGORY"], query: { text_query: { keywords: ["Club Check-Ins"] } } })
                 });
-                const checkInItem = data.objects?.find(obj => obj.item_data.name.toLowerCase() === 'check-in');
-                if (!checkInItem || !checkInItem.item_data.variations?.[0]?.id) throw new Error('Could not find a "Check-In" item in your Square catalog.');
-                checkInItemId = checkInItem.item_data.variations[0].id;
+                const category = categoryData.objects?.find(obj => obj.category_data.name.toLowerCase() === 'club check-ins');
+                if (!category) {
+                    console.log('"Club Check-Ins" category not found. Skipping additional check-in options.');
+                    clubCheckInItems = [];
+                    return; // No category found, so we can't find the items.
+                }
+
+                // Now, find all items within that category
+                const itemsData = await apiFetch('/v2/catalog/search', {
+                    method: 'POST',
+                    body: JSON.stringify({ object_types: ["ITEM"], query: { "item_query": { "category_ids": [category.id] } } })
+                });
+
+                clubCheckInItems = itemsData.objects?.map(item => ({
+                    name: item.item_data.name,
+                    id: item.item_data.variations?.[0]?.id
+                })).filter(item => item.id) || []; // Ensure we only have items with a valid variation ID
             };
 
             const fetchLocationId = async () => {
@@ -164,11 +173,11 @@
                     const button = document.createElement('button');
                     button.className = 'w-full text-center p-4 bg-white border-2 border-gray-300 rounded-md hover:border-cyan-500 focus:border-cyan-500 transition-all text-2xl font-semibold';
                     button.textContent = `${customer.given_name || ''} ${customer.family_name || ''}`;
-                    button.onclick = async () => {
+                    button.onclick = () => {
                         selectedCustomer = customer;
                         showStage('welcome');
                         displayWelcomeMessage();
-                        await createCheckInPurchase();
+                        displayClubCheckInButtons();
                     };
                     resultsList.appendChild(button);
                 });
@@ -194,19 +203,49 @@
                 welcomeMessageContainer.innerHTML = `<h1 class="text-5xl font-bold text-gray-800 mb-4">Welcome, ${selectedCustomer.given_name || ''}!</h1>${membershipHTML}`;
             };
 
-            const createCheckInPurchase = async () => {
-                purchaseStatusContainer.innerHTML = `<div class="flex items-center justify-center text-gray-500"><div class="spinner mr-2"></div>Recording check-in...</div>`;
+            const displayClubCheckInButtons = () => {
+                clubCheckInsContainer.innerHTML = '';
+                if (clubCheckInItems.length === 0) return;
+
+                const title = document.createElement('h2');
+                title.className = 'text-xl font-semibold text-gray-800 mb-4 mt-8';
+                title.textContent = 'Record Additional Check-in:';
+                clubCheckInsContainer.appendChild(title);
+                
+                const buttonGrid = document.createElement('div');
+                buttonGrid.className = 'grid grid-cols-2 gap-4';
+
+                clubCheckInItems.forEach(item => {
+                    const button = document.createElement('button');
+                    button.className = 'p-4 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 font-semibold';
+                    button.textContent = item.name;
+                    button.onclick = () => createItemPurchase(item.id, button);
+                    buttonGrid.appendChild(button);
+                });
+                clubCheckInsContainer.appendChild(buttonGrid);
+            };
+
+            const createItemPurchase = async (itemId, buttonElement) => {
+                buttonElement.disabled = true;
+                buttonElement.innerHTML = '<div class="flex justify-center items-center"><div class="spinner"></div></div>';
+                
                 try {
-                    const orderPayload = { idempotency_key: crypto.randomUUID(), order: { location_id: locationId, customer_id: selectedCustomer.id, line_items: [{ catalog_object_id: checkInItemId, quantity: '1' }] } };
+                    const orderPayload = { idempotency_key: crypto.randomUUID(), order: { location_id: locationId, customer_id: selectedCustomer.id, line_items: [{ catalog_object_id: itemId, quantity: '1' }] } };
                     const orderData = await apiFetch('/v2/orders', { method: 'POST', body: JSON.stringify(orderPayload) });
                     const payPayload = { idempotency_key: crypto.randomUUID(), payment_ids: [] };
                     await apiFetch(`/v2/orders/${orderData.order.id}/pay`, { method: 'POST', body: JSON.stringify(payPayload) });
                     
-                    purchaseStatusContainer.textContent = 'Check-in recorded successfully!';
-                    purchaseStatusContainer.className = 'mt-4 text-lg text-green-600 font-semibold';
+                    buttonElement.className = 'p-4 bg-green-500 text-white rounded-md font-semibold';
+                    buttonElement.textContent = '✓ Recorded';
                 } catch (error) {
-                    purchaseStatusContainer.textContent = `Could not record check-in: ${error.message}`;
-                    purchaseStatusContainer.className = 'mt-4 text-lg text-red-600 font-semibold';
+                    buttonElement.className = 'p-4 bg-red-500 text-white rounded-md font-semibold';
+                    buttonElement.textContent = 'Failed';
+                    // Re-enable after a delay so user can retry
+                    setTimeout(() => {
+                        buttonElement.disabled = false;
+                        buttonElement.className = 'p-4 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 font-semibold';
+                        buttonElement.textContent = 'Retry';
+                    }, 3000);
                 }
             };
 
