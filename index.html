@@ -45,6 +45,7 @@
         
         <div id="stage-3-welcome" class="stage">
             <div id="welcome-message" class="mb-8"></div>
+            <div id="locker-info-container" class="mt-4 text-lg"></div>
             <div id="club-check-ins-container" class="mt-8"></div>
             <button id="start-over-btn" class="w-full px-8 py-4 text-white bg-cyan-600 rounded-md hover:bg-cyan-700 text-xl mt-8">Done</button>
         </div>
@@ -63,6 +64,7 @@
             const searchBtn = document.getElementById('search-btn');
             const resultsList = document.getElementById('results-list');
             const welcomeMessageContainer = document.getElementById('welcome-message');
+            const lockerInfoContainer = document.getElementById('locker-info-container');
             const clubCheckInsContainer = document.getElementById('club-check-ins-container');
             const startOverBtn = document.getElementById('start-over-btn');
             const backToSearchBtn = document.getElementById('back-to-search-btn');
@@ -73,6 +75,7 @@
             let allSegmentsMap = new Map();
             let selectedCustomer = null;
             let clubCheckInItems = [];
+            let lockerRentalVariationIds = new Map();
             let locationId = null;
 
             const API_PROXY_URL = 'https://square-checkin-backend.onrender.com';
@@ -96,7 +99,7 @@
             const fetchInitialData = async () => {
                 showLoader('Activating kiosk and fetching catalog...');
                 try {
-                    await Promise.all([ fetchAllSegments(), fetchClubCheckInItems(), fetchLocationId() ]);
+                    await Promise.all([ fetchAllSegments(), fetchClubCheckInItems(), fetchLockerRentalInfo(), fetchLocationId() ]);
                     showStage('search');
                 } catch (error) {
                     showError(error.message);
@@ -116,35 +119,40 @@
                         method: 'POST',
                         body: JSON.stringify({ object_types: ["CATEGORY"] })
                     });
-                    
                     const category = categoryData.objects?.find(obj => obj.category_data.name.toLowerCase() === 'kiosk check-ins');
-                    
                     if (!category) {
-                        console.warn('"Kiosk Check-Ins" category not found. Skipping additional check-in options.');
-                        clubCheckInItems = [];
+                        console.warn('"Kiosk Check-Ins" category not found.');
                         return;
                     }
-
                     const itemsData = await apiFetch('/v2/catalog/search-catalog-items', {
                         method: 'POST',
-                        body: JSON.stringify({
-                            "category_ids": [category.id]
-                        })
+                        body: JSON.stringify({ "category_ids": [category.id] })
                     });
-
-                    if (!itemsData.items || itemsData.items.length === 0) {
-                        clubCheckInItems = [];
-                        return;
+                    if (itemsData.items) {
+                        clubCheckInItems = itemsData.items.map(item => ({
+                            name: item.item_data.name,
+                            id: item.item_data.variations?.[0]?.id
+                        })).filter(item => item.id);
                     }
-                    
-                    clubCheckInItems = itemsData.items?.map(item => ({
-                        name: item.item_data.name,
-                        id: item.item_data.variations?.[0]?.id
-                    })).filter(item => item.id) || [];
-
                 } catch (error) {
                     console.error("Could not fetch club check-in items:", error);
-                    clubCheckInItems = [];
+                }
+            };
+
+            const fetchLockerRentalInfo = async () => {
+                try {
+                    const itemData = await apiFetch('/v2/catalog/search', {
+                        method: 'POST',
+                        body: JSON.stringify({ object_types: ["ITEM"], query: { text_query: { keywords: ["Locker Rentals"] } } })
+                    });
+                    const lockerItem = itemData.objects?.find(obj => obj.item_data.name.toLowerCase() === 'locker rentals');
+                    if (lockerItem && lockerItem.item_data.variations) {
+                        lockerItem.item_data.variations.forEach(variation => {
+                            lockerRentalVariationIds.set(variation.id, variation.item_variation_data.name);
+                        });
+                    }
+                } catch (error) {
+                    console.warn("Could not fetch locker rental info. This feature will be disabled.", error);
                 }
             };
 
@@ -176,6 +184,14 @@
                 }
             };
             
+            const handleCustomerSelection = async (customer) => {
+                selectedCustomer = customer;
+                showStage('welcome');
+                displayWelcomeMessage();
+                displayClubCheckInButtons();
+                await displayLockerRentalStatus();
+            };
+
             const displayCustomerResults = (customers) => {
                 resultsList.innerHTML = '';
                 if (customers.length === 0) {
@@ -186,12 +202,7 @@
                     const button = document.createElement('button');
                     button.className = 'w-full text-center p-4 bg-white border-2 border-gray-300 rounded-md hover:border-cyan-500 focus:border-cyan-500 transition-all text-2xl font-semibold';
                     button.textContent = `${customer.given_name || ''} ${customer.family_name || ''}`;
-                    button.onclick = () => {
-                        selectedCustomer = customer;
-                        showStage('welcome');
-                        displayWelcomeMessage();
-                        displayClubCheckInButtons();
-                    };
+                    button.onclick = () => handleCustomerSelection(customer);
                     resultsList.appendChild(button);
                 });
             };
@@ -216,22 +227,57 @@
                 welcomeMessageContainer.innerHTML = `<h1 class="text-5xl font-bold text-gray-800 mb-4">Welcome, ${selectedCustomer.given_name || ''}!</h1>${membershipHTML}`;
             };
 
+            const displayLockerRentalStatus = async () => {
+                lockerInfoContainer.innerHTML = '';
+                if (lockerRentalVariationIds.size === 0) return;
+
+                try {
+                    const now = new Date();
+                    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+                    const orderData = await apiFetch('/v2/orders/search', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            location_ids: [locationId],
+                            query: {
+                                filter: {
+                                    customer_filter: { customer_ids: [selectedCustomer.id] },
+                                    date_time_filter: { closed_at: { start_at: startOfMonth.toISOString(), end_at: endOfMonth.toISOString() } },
+                                    state_filter: { states: ["COMPLETED"] }
+                                }
+                            }
+                        })
+                    });
+
+                    if (orderData.orders) {
+                        for (const order of orderData.orders) {
+                            for (const lineItem of order.line_items) {
+                                if (lockerRentalVariationIds.has(lineItem.catalog_object_id)) {
+                                    const lockerSize = lockerRentalVariationIds.get(lineItem.catalog_object_id);
+                                    lockerInfoContainer.innerHTML = `<p class="text-2xl font-medium text-gray-700">Locker Rental: ${lockerSize}</p>`;
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error checking for locker rental:", error);
+                }
+            };
+
             const displayClubCheckInButtons = () => {
                 clubCheckInsContainer.innerHTML = '';
                 if (clubCheckInItems.length === 0) return;
-
                 const title = document.createElement('h2');
                 title.className = 'text-xl font-semibold text-gray-800 mb-4 mt-8';
                 title.textContent = 'Record Additional Check-in:';
                 clubCheckInsContainer.appendChild(title);
-                
                 const buttonGrid = document.createElement('div');
                 buttonGrid.className = 'grid grid-cols-2 gap-4';
-
                 clubCheckInItems.forEach(item => {
                     const button = document.createElement('button');
                     button.className = 'p-4 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 font-semibold';
-                    // UPDATED: Remove "Check-In" from the button text
                     button.textContent = item.name.replace(/check-in/i, '').trim();
                     button.onclick = () => createItemPurchase(item.id, button);
                     buttonGrid.appendChild(button);
@@ -242,19 +288,16 @@
             const createItemPurchase = async (itemId, buttonElement) => {
                 buttonElement.disabled = true;
                 buttonElement.innerHTML = '<div class="flex justify-center items-center"><div class="spinner"></div></div>';
-                
                 try {
                     const orderPayload = { idempotency_key: crypto.randomUUID(), order: { location_id: locationId, customer_id: selectedCustomer.id, line_items: [{ catalog_object_id: itemId, quantity: '1' }] } };
                     const orderData = await apiFetch('/v2/orders', { method: 'POST', body: JSON.stringify(orderPayload) });
                     const payPayload = { idempotency_key: crypto.randomUUID(), payment_ids: [] };
                     await apiFetch(`/v2/orders/${orderData.order.id}/pay`, { method: 'POST', body: JSON.stringify(payPayload) });
-                    
                     buttonElement.className = 'p-4 bg-green-500 text-white rounded-md font-semibold';
                     buttonElement.textContent = '✓ Recorded';
                 } catch (error) {
                     buttonElement.className = 'p-4 bg-red-500 text-white rounded-md font-semibold';
                     buttonElement.textContent = 'Failed';
-                    // Re-enable after a delay so user can retry
                     setTimeout(() => {
                         buttonElement.disabled = false;
                         buttonElement.className = 'p-4 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 font-semibold';
