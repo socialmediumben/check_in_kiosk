@@ -195,7 +195,13 @@
             const displayCustomerResults = (customers) => {
                 resultsList.innerHTML = '';
                 if (customers.length === 0) {
-                    resultsList.innerHTML = '<p class="text-gray-500 text-center p-4">No customers found with that phone number.</p>';
+                    // UPDATED: Show waiver button when no customers are found
+                    resultsList.innerHTML = `
+                        <p class="text-gray-500 text-center p-4 text-xl">No customers found with that phone number.</p>
+                        <a href="https://www.socialmedium.space/waiver" target="_blank" class="block w-full mt-4 px-8 py-4 text-white bg-green-600 rounded-md hover:bg-green-700 text-xl">
+                            Sign the Waiver
+                        </a>
+                    `;
                     return;
                 }
                 customers.forEach(customer => {
@@ -229,9 +235,7 @@
 
             const displayLockerRentalStatus = async () => {
                 lockerInfoContainer.innerHTML = '';
-                if (lockerRentalVariationIds.size === 0) {
-                    return;
-                }
+                if (lockerRentalVariationIds.size === 0) return;
 
                 try {
                     const now = new Date();
