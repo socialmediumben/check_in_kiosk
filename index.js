@@ -1,9 +1,9 @@
-// index.js - The updated backend server for Render
+// index.js - The corrected backend server for Render
 
 const express = require('express');
 const cors = require('cors');
-// Use node-fetch version 2 for CommonJS compatibility with `require`
-const fetch = require('node-fetch'); 
+// Reverted to the original dynamic import to ensure compatibility with other apps.
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -20,11 +20,7 @@ app.all('/api/*', async (req, res) => {
     return res.status(401).json({ error: 'Square Access Token is missing.' });
   }
 
-  // Log the incoming request details to help with debugging
   console.log(`[PROXY] Forwarding ${req.method} request to: ${squareApiUrl}`);
-  if (req.method !== 'GET' && req.body) {
-    console.log('[PROXY] Request Body:', JSON.stringify(req.body, null, 2));
-  }
 
   try {
     // Construct the options for the fetch call to the Square API
@@ -37,15 +33,15 @@ app.all('/api/*', async (req, res) => {
       },
     };
 
-    // IMPORTANT FIX: Only add the body to the options if the method is not GET and a body exists.
-    // This ensures the body is correctly formatted for POST, PUT, etc.
+    // This is the crucial part: ensure the body is correctly stringified for POST requests.
     if (req.method !== 'GET' && req.body) {
       options.body = JSON.stringify(req.body);
+      console.log('[PROXY] Forwarding Body:', options.body);
     }
 
     const squareResponse = await fetch(`https://connect.squareup.com${squareApiUrl}`, options);
 
-    // Get the response from Square as text first to handle potential empty responses
+    // Handle the response carefully to avoid errors with empty bodies
     const responseText = await squareResponse.text();
     const data = responseText ? JSON.parse(responseText) : {};
 
@@ -53,7 +49,7 @@ app.all('/api/*', async (req, res) => {
     res.status(squareResponse.status).json(data);
 
   } catch (error) {
-    console.error('[PROXY] Error:', error);
+    console.error('[PROXY] An error occurred:', error);
     res.status(500).json({ error: 'An internal server error occurred.' });
   }
 });
