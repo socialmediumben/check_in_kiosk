@@ -1,8 +1,9 @@
-// index.js - The backend server for Render
+// index.js - The updated backend server for Render
 
 const express = require('express');
 const cors = require('cors');
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+// Use node-fetch version 2 for CommonJS compatibility with `require`
+const fetch = require('node-fetch'); 
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -10,7 +11,7 @@ const port = process.env.PORT || 3000;
 app.use(cors()); // Enable CORS for all routes
 app.use(express.json()); // Allow the server to read JSON bodies
 
-// This single route will catch all requests and forward them to Square
+// This single route will catch all API requests and forward them to Square
 app.all('/api/*', async (req, res) => {
   const squareApiUrl = req.path.replace('/api', ''); // Get the path (e.g., /v2/customers/search)
   const accessToken = req.headers['x-square-access-token'];
@@ -19,26 +20,40 @@ app.all('/api/*', async (req, res) => {
     return res.status(401).json({ error: 'Square Access Token is missing.' });
   }
 
+  // Log the incoming request details to help with debugging
+  console.log(`[PROXY] Forwarding ${req.method} request to: ${squareApiUrl}`);
+  if (req.method !== 'GET' && req.body) {
+    console.log('[PROXY] Request Body:', JSON.stringify(req.body, null, 2));
+  }
+
   try {
-    const squareResponse = await fetch(`https://connect.squareup.com${squareApiUrl}`, {
+    // Construct the options for the fetch call to the Square API
+    const options = {
       method: req.method,
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Square-Version': '2023-10-18',
         'Content-Type': 'application/json',
       },
-      body: req.method !== 'GET' ? JSON.stringify(req.body) : undefined,
-    });
+    };
 
-    const data = await squareResponse.json();
-
-    if (!squareResponse.ok) {
-      return res.status(squareResponse.status).json(data);
+    // IMPORTANT FIX: Only add the body to the options if the method is not GET and a body exists.
+    // This ensures the body is correctly formatted for POST, PUT, etc.
+    if (req.method !== 'GET' && req.body) {
+      options.body = JSON.stringify(req.body);
     }
 
-    res.status(200).json(data);
+    const squareResponse = await fetch(`https://connect.squareup.com${squareApiUrl}`, options);
+
+    // Get the response from Square as text first to handle potential empty responses
+    const responseText = await squareResponse.text();
+    const data = responseText ? JSON.parse(responseText) : {};
+
+    // Forward Square's status code and response body to the client
+    res.status(squareResponse.status).json(data);
 
   } catch (error) {
+    console.error('[PROXY] Error:', error);
     res.status(500).json({ error: 'An internal server error occurred.' });
   }
 });
