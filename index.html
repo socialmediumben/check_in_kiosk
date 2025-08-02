@@ -58,6 +58,8 @@
         <div id="stage-3-welcome" class="stage">
             <div id="welcome-message" class="mb-8"></div>
             <div id="locker-info-container" class="mt-4 text-lg space-y-2"></div>
+            <!-- Container for interests -->
+            <div id="interests-container" class="mt-6 text-left border-t pt-6"></div>
             <div id="club-check-ins-container" class="mt-8"></div>
             <button id="start-over-btn" class="w-full px-8 py-4 text-white bg-cyan-600 rounded-md hover:bg-cyan-700 text-xl mt-8">Done</button>
         </div>
@@ -79,6 +81,7 @@
             const resultsList = document.getElementById('results-list');
             const welcomeMessageContainer = document.getElementById('welcome-message');
             const lockerInfoContainer = document.getElementById('locker-info-container');
+            const interestsContainer = document.getElementById('interests-container');
             const clubCheckInsContainer = document.getElementById('club-check-ins-container');
             const startOverBtn = document.getElementById('start-over-btn');
             const backToSearchBtn = document.getElementById('back-to-search-btn');
@@ -89,11 +92,12 @@
             // --- State Variables ---
             let squareAccessToken = null;
             let allSegmentsMap = new Map();
+            let customAttributeDefinitionsMap = new Map(); // To store custom attribute definitions
             let clubCheckInItems = [];
             let lockerRentalVariationIds = new Map();
             let locationId = null;
-            let searchedCustomers = []; // Store the full customer objects from the search
-            let selectedCustomers = []; // Store the selected customer objects
+            let searchedCustomers = []; 
+            let selectedCustomers = [];
 
             const API_PROXY_URL = 'https://square-checkin-backend.onrender.com';
 
@@ -119,17 +123,29 @@
             const fetchInitialData = async () => {
                 showLoader('Activating kiosk and fetching catalog...');
                 try {
-                    await Promise.all([ fetchAllSegments(), fetchClubCheckInItems(), fetchLockerRentalInfo(), fetchLocationId() ]);
+                    // Added fetchCustomAttributeDefinitions to the initial data fetch
+                    await Promise.all([ fetchAllSegments(), fetchClubCheckInItems(), fetchLockerRentalInfo(), fetchLocationId(), fetchCustomAttributeDefinitions() ]);
                     showStage('search');
                 } catch (error) {
                     showError(`Could not connect to the backend. ${error.message}`);
                     showStage('setup');
                 }
             };
-            const fetchAllSegments = async () => { /* ... no changes ... */ const data = await apiFetch('/v2/customers/segments'); allSegmentsMap.clear(); if (data.segments) data.segments.forEach(s => allSegmentsMap.set(s.id, s.name)); };
-            const fetchClubCheckInItems = async () => { /* ... no changes ... */ try { const categoryData = await apiFetch('/v2/catalog/search', { method: 'POST', body: JSON.stringify({ object_types: ["CATEGORY"] }) }); const category = categoryData.objects?.find(obj => obj.category_data.name.toLowerCase() === 'kiosk check-ins'); if (!category) { console.warn('"Kiosk Check-Ins" category not found.'); return; } const itemsData = await apiFetch('/v2/catalog/search-catalog-items', { method: 'POST', body: JSON.stringify({ "category_ids": [category.id] }) }); if (itemsData.items) { clubCheckInItems = itemsData.items.map(item => ({ name: item.item_data.name, id: item.item_data.variations?.[0]?.id })).filter(item => item.id); } } catch (error) { console.error("Could not fetch club check-in items:", error); } };
-            const fetchLockerRentalInfo = async () => { /* ... no changes ... */ try { const itemData = await apiFetch('/v2/catalog/search', { method: 'POST', body: JSON.stringify({ object_types: ["ITEM"], query: { text_query: { keywords: ["Locker Rentals"] } } }) }); const lockerItem = itemData.objects?.find(obj => obj.item_data.name.toLowerCase() === 'locker rentals'); if (lockerItem && lockerItem.item_data.variations) { lockerItem.item_data.variations.forEach(variation => { lockerRentalVariationIds.set(variation.id, variation.item_variation_data.name); }); } } catch (error) { console.warn("Could not fetch locker rental info. This feature will be disabled.", error); } };
-            const fetchLocationId = async () => { /* ... no changes ... */ const data = await apiFetch('/v2/locations'); const activeLocation = data.locations?.find(loc => loc.status === 'ACTIVE'); if (!activeLocation) throw new Error('No active location found for this business.'); locationId = activeLocation.id; };
+
+            const fetchCustomAttributeDefinitions = async () => {
+                const data = await apiFetch('/v2/customers/custom-attribute-definitions');
+                customAttributeDefinitionsMap.clear();
+                if (data.custom_attribute_definitions) {
+                    data.custom_attribute_definitions.forEach(def => {
+                        customAttributeDefinitionsMap.set(def.key, def.name);
+                    });
+                }
+            };
+            
+            const fetchAllSegments = async () => { const data = await apiFetch('/v2/customers/segments'); allSegmentsMap.clear(); if (data.segments) data.segments.forEach(s => allSegmentsMap.set(s.id, s.name)); };
+            const fetchClubCheckInItems = async () => { try { const categoryData = await apiFetch('/v2/catalog/search', { method: 'POST', body: JSON.stringify({ object_types: ["CATEGORY"] }) }); const category = categoryData.objects?.find(obj => obj.category_data.name.toLowerCase() === 'kiosk check-ins'); if (!category) { console.warn('"Kiosk Check-Ins" category not found.'); return; } const itemsData = await apiFetch('/v2/catalog/search-catalog-items', { method: 'POST', body: JSON.stringify({ "category_ids": [category.id] }) }); if (itemsData.items) { clubCheckInItems = itemsData.items.map(item => ({ name: item.item_data.name, id: item.item_data.variations?.[0]?.id })).filter(item => item.id); } } catch (error) { console.error("Could not fetch club check-in items:", error); } };
+            const fetchLockerRentalInfo = async () => { try { const itemData = await apiFetch('/v2/catalog/search', { method: 'POST', body: JSON.stringify({ object_types: ["ITEM"], query: { text_query: { keywords: ["Locker Rentals"] } } }) }); const lockerItem = itemData.objects?.find(obj => obj.item_data.name.toLowerCase() === 'locker rentals'); if (lockerItem && lockerItem.item_data.variations) { lockerItem.item_data.variations.forEach(variation => { lockerRentalVariationIds.set(variation.id, variation.item_variation_data.name); }); } } catch (error) { console.warn("Could not fetch locker rental info. This feature will be disabled.", error); } };
+            const fetchLocationId = async () => { const data = await apiFetch('/v2/locations'); const activeLocation = data.locations?.find(loc => loc.status === 'ACTIVE'); if (!activeLocation) throw new Error('No active location found for this business.'); locationId = activeLocation.id; };
 
             // --- Core Application Logic ---
             const searchCustomers = async () => {
@@ -156,7 +172,7 @@
             
             const displayCustomerResults = () => {
                 resultsList.innerHTML = '';
-                selectedCustomers = []; // Clear previous selections
+                selectedCustomers = []; 
                 checkInSelectedBtn.disabled = true;
 
                 if (searchedCustomers.length === 0) {
@@ -182,10 +198,10 @@
             const toggleCustomerSelection = (customer, cardElement) => {
                 const index = selectedCustomers.findIndex(c => c.id === customer.id);
                 if (index > -1) {
-                    selectedCustomers.splice(index, 1); // Remove if already selected
+                    selectedCustomers.splice(index, 1);
                     cardElement.classList.remove('selected');
                 } else {
-                    selectedCustomers.push(customer); // Add if not selected
+                    selectedCustomers.push(customer);
                     cardElement.classList.add('selected');
                 }
                 checkInSelectedBtn.disabled = selectedCustomers.length === 0;
@@ -195,6 +211,7 @@
                 if (selectedCustomers.length === 0) return;
                 showStage('welcome');
                 displayWelcomeMessage();
+                displayInterests(); // New function call
                 displayClubCheckInButtons();
                 await displayLockerRentalStatus();
             };
@@ -203,7 +220,7 @@
                 if (selectedCustomers.length === 0) return;
                 
                 const names = selectedCustomers.map(c => c.given_name || '').join(', ');
-                const allThankYouMessages = new Set(); // Use a Set to avoid duplicate messages
+                const allThankYouMessages = new Set(); 
 
                 selectedCustomers.forEach(customer => {
                     const segmentIds = customer.segment_ids || [];
@@ -226,98 +243,43 @@
                 welcomeMessageContainer.innerHTML = `<h1 class="text-5xl font-bold text-gray-800 mb-4">Welcome, ${names}!</h1>${membershipHTML}`;
             };
 
-            const displayLockerRentalStatus = async () => {
-                lockerInfoContainer.innerHTML = '';
-                if (lockerRentalVariationIds.size === 0) return;
+            const displayInterests = () => {
+                interestsContainer.innerHTML = '';
+                let allInterestsHTML = '';
 
-                const lockerRentalsFound = [];
-
-                for (const customer of selectedCustomers) {
-                    try {
-                        const now = new Date();
-                        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-                        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-
-                        const orderData = await apiFetch('/v2/orders/search', {
-                            method: 'POST',
-                            body: JSON.stringify({
-                                location_ids: [locationId],
-                                query: {
-                                    filter: {
-                                        customer_filter: { customer_ids: [customer.id] },
-                                        date_time_filter: { closed_at: { start_at: startOfMonth.toISOString(), end_at: endOfMonth.toISOString() } },
-                                        state_filter: { states: ["COMPLETED"] }
-                                    }
-                                }
-                            })
-                        });
-
-                        if (orderData.orders) {
-                            for (const order of orderData.orders) {
-                                for (const lineItem of order.line_items) {
-                                    if (lockerRentalVariationIds.has(lineItem.catalog_object_id)) {
-                                        const lockerSize = lockerRentalVariationIds.get(lineItem.catalog_object_id);
-                                        lockerRentalsFound.push(`<p class="text-2xl font-medium text-gray-700">${customer.given_name}: ${lockerSize} Locker Rental</p>`);
-                                    }
-                                }
+                selectedCustomers.forEach(customer => {
+                    const customerInterests = [];
+                    if (customer.custom_attributes) {
+                        for (const [key, attribute] of Object.entries(customer.custom_attributes)) {
+                            const definitionName = customAttributeDefinitionsMap.get(attribute.key);
+                            if (definitionName && definitionName.startsWith('T: ') && attribute.value === 'yes') {
+                                customerInterests.push(definitionName.replace('T: ', '').trim());
                             }
                         }
-                    } catch (error) {
-                        console.error(`Error checking locker rental for ${customer.given_name}:`, error);
                     }
-                }
-                if (lockerRentalsFound.length > 0) {
-                    lockerInfoContainer.innerHTML = lockerRentalsFound.join('');
-                }
-            };
 
-            const displayClubCheckInButtons = () => {
-                clubCheckInsContainer.innerHTML = '';
-                if (clubCheckInItems.length === 0) return;
-                const title = document.createElement('h2');
-                title.className = 'text-xl font-semibold text-gray-800 mb-4 mt-8';
-                title.textContent = 'Record Additional Check-in:';
-                clubCheckInsContainer.appendChild(title);
-                const buttonGrid = document.createElement('div');
-                buttonGrid.className = 'grid grid-cols-2 gap-4';
-                clubCheckInItems.forEach(item => {
-                    const button = document.createElement('button');
-                    button.className = 'p-4 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 font-semibold';
-                    button.textContent = item.name.replace(/check-in/i, '').trim();
-                    button.onclick = () => createItemPurchase(item.id, button);
-                    buttonGrid.appendChild(button);
-                });
-                clubCheckInsContainer.appendChild(buttonGrid);
-            };
-
-            const createItemPurchase = async (itemId, buttonElement) => {
-                buttonElement.disabled = true;
-                buttonElement.innerHTML = '<div class="flex justify-center items-center"><div class="spinner"></div></div>';
-                
-                const purchasePromises = selectedCustomers.map(customer => {
-                    const orderPayload = { idempotency_key: crypto.randomUUID(), order: { location_id: locationId, customer_id: customer.id, line_items: [{ catalog_object_id: itemId, quantity: '1' }] } };
-                    return apiFetch('/v2/orders', { method: 'POST', body: JSON.stringify(orderPayload) })
-                        .then(orderData => {
-                            const payPayload = { idempotency_key: crypto.randomUUID(), payment_ids: [] };
-                            return apiFetch(`/v2/orders/${orderData.order.id}/pay`, { method: 'POST', body: JSON.stringify(payPayload) });
+                    if (customerInterests.length > 0) {
+                        let customerInterestsHTML = `<div class="mb-6">
+                            <h3 class="text-2xl font-bold text-gray-800">${customer.given_name} is nerdy for...</h3>
+                            <ul class="flex flex-wrap justify-center gap-2 mt-3">`;
+                        
+                        customerInterests.forEach(interest => {
+                            customerInterestsHTML += `<li class="bg-cyan-100 text-cyan-800 text-lg font-medium px-3 py-1 rounded-full">${interest}</li>`;
                         });
+
+                        customerInterestsHTML += `</ul></div>`;
+                        allInterestsHTML += customerInterestsHTML;
+                    }
                 });
 
-                try {
-                    await Promise.all(purchasePromises);
-                    buttonElement.className = 'p-4 bg-green-500 text-white rounded-md font-semibold';
-                    buttonElement.textContent = '✓ Recorded';
-                } catch (error) {
-                    console.error("One or more check-ins failed:", error);
-                    buttonElement.className = 'p-4 bg-red-500 text-white rounded-md font-semibold';
-                    buttonElement.textContent = 'Failed';
-                    setTimeout(() => {
-                        buttonElement.disabled = false;
-                        buttonElement.className = 'p-4 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 font-semibold';
-                        buttonElement.textContent = 'Retry';
-                    }, 3000);
+                if (allInterestsHTML) {
+                    interestsContainer.innerHTML = allInterestsHTML;
                 }
             };
+
+            const displayLockerRentalStatus = async () => { /* ... no changes ... */ lockerInfoContainer.innerHTML = ''; if (lockerRentalVariationIds.size === 0) return; const lockerRentalsFound = []; for (const customer of selectedCustomers) { try { const now = new Date(); const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1); const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0); const orderData = await apiFetch('/v2/orders/search', { method: 'POST', body: JSON.stringify({ location_ids: [locationId], query: { filter: { customer_filter: { customer_ids: [customer.id] }, date_time_filter: { closed_at: { start_at: startOfMonth.toISOString(), end_at: endOfMonth.toISOString() } }, state_filter: { states: ["COMPLETED"] } } } }) }); if (orderData.orders) { for (const order of orderData.orders) { for (const lineItem of order.line_items) { if (lockerRentalVariationIds.has(lineItem.catalog_object_id)) { const lockerSize = lockerRentalVariationIds.get(lineItem.catalog_object_id); lockerRentalsFound.push(`<p class="text-2xl font-medium text-gray-700">${customer.given_name}: ${lockerSize} Locker Rental</p>`); } } } } } catch (error) { console.error(`Error checking locker rental for ${customer.given_name}:`, error); } } if (lockerRentalsFound.length > 0) { lockerInfoContainer.innerHTML = lockerRentalsFound.join(''); } };
+            const displayClubCheckInButtons = () => { /* ... no changes ... */ clubCheckInsContainer.innerHTML = ''; if (clubCheckInItems.length === 0) return; const title = document.createElement('h2'); title.className = 'text-xl font-semibold text-gray-800 mb-4 mt-8'; title.textContent = 'Record Additional Check-in:'; clubCheckInsContainer.appendChild(title); const buttonGrid = document.createElement('div'); buttonGrid.className = 'grid grid-cols-2 gap-4'; clubCheckInItems.forEach(item => { const button = document.createElement('button'); button.className = 'p-4 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 font-semibold'; button.textContent = item.name.replace(/check-in/i, '').trim(); button.onclick = () => createItemPurchase(item.id, button); buttonGrid.appendChild(button); }); clubCheckInsContainer.appendChild(buttonGrid); };
+            const createItemPurchase = async (itemId, buttonElement) => { /* ... no changes ... */ buttonElement.disabled = true; buttonElement.innerHTML = '<div class="flex justify-center items-center"><div class="spinner"></div></div>'; const purchasePromises = selectedCustomers.map(customer => { const orderPayload = { idempotency_key: crypto.randomUUID(), order: { location_id: locationId, customer_id: customer.id, line_items: [{ catalog_object_id: itemId, quantity: '1' }] } }; return apiFetch('/v2/orders', { method: 'POST', body: JSON.stringify(orderPayload) }) .then(orderData => { const payPayload = { idempotency_key: crypto.randomUUID(), payment_ids: [] }; return apiFetch(`/v2/orders/${orderData.order.id}/pay`, { method: 'POST', body: JSON.stringify(payPayload) }); }); }); try { await Promise.all(purchasePromises); buttonElement.className = 'p-4 bg-green-500 text-white rounded-md font-semibold'; buttonElement.textContent = '✓ Recorded'; } catch (error) { console.error("One or more check-ins failed:", error); buttonElement.className = 'p-4 bg-red-500 text-white rounded-md font-semibold'; buttonElement.textContent = 'Failed'; setTimeout(() => { buttonElement.disabled = false; buttonElement.className = 'p-4 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 font-semibold'; buttonElement.textContent = 'Retry'; }, 3000); } };
 
             // --- Event Listeners ---
             saveTokenBtn.addEventListener('click', () => {
