@@ -10,14 +10,20 @@
         body { font-family: 'Inter', sans-serif; }
         .stage { display: none; }
         .active-stage { display: block; }
-        .spinner { border: 4px solid rgba(0, 0, 0, 0.1); width: 24px; height: 24px; border-radius: 50%; border-left-color: #fff; animation: spin 1s ease infinite; }
+        .spinner { border: 4px solid rgba(0, 0, 0, 0.1); width: 24px; height: 24px; border-radius: 50%; border-left-color: #0891b2; animation: spin 1s ease infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        /* Style for selected customer cards */
+        .customer-card.selected {
+            border-color: #0891b2; /* cyan-600 */
+            background-color: #ecfeff; /* cyan-50 */
+        }
     </style>
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
 
     <div class="w-full max-w-xl mx-auto bg-white p-8 rounded-2xl shadow-lg text-center">
 
+        <!-- Stage for Admin to enter Square Access Token -->
         <div id="stage-setup" class="stage active-stage">
             <h1 class="text-3xl font-bold text-gray-800">Admin Setup</h1>
             <p class="text-gray-500 mt-2 mb-6">Please enter the Square Access Token to activate this kiosk.</p>
@@ -27,6 +33,7 @@
             </div>
         </div>
 
+        <!-- Stage 1: Customer enters phone number -->
         <div id="stage-1-search" class="stage">
             <h1 class="text-4xl font-bold text-gray-800">Customer Check-In</h1>
             <p class="text-gray-500 mt-2 mb-8">Please enter your phone number to begin.</p>
@@ -36,20 +43,26 @@
             </div>
         </div>
         
+        <!-- Stage 2: Shows customer results with multi-select -->
         <div id="stage-2-results" class="stage">
-            <h1 class="text-4xl font-bold text-gray-800">Is this you?</h1>
-            <p class="text-gray-500 mt-2 mb-8">Please tap your name to confirm.</p>
+            <h1 class="text-4xl font-bold text-gray-800">Who is checking in?</h1>
+            <p class="text-gray-500 mt-2 mb-8">Please tap all names you'd like to check in.</p>
             <div id="results-list" class="space-y-4"></div>
-            <button id="back-to-search-btn" class="mt-8 px-6 py-2 text-gray-600 bg-gray-200 rounded-md hover:bg-gray-300">Back to Search</button>
+            <div class="mt-8 flex justify-between items-center">
+                <button id="back-to-search-btn" class="px-6 py-2 text-gray-600 bg-gray-200 rounded-md hover:bg-gray-300">Back to Search</button>
+                <button id="check-in-selected-btn" class="px-8 py-3 text-white bg-cyan-600 rounded-md hover:bg-cyan-700 text-xl disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>Check In Selected</button>
+            </div>
         </div>
         
+        <!-- Stage 3: Welcome message and further actions for multiple customers -->
         <div id="stage-3-welcome" class="stage">
             <div id="welcome-message" class="mb-8"></div>
-            <div id="locker-info-container" class="mt-4 text-lg"></div>
+            <div id="locker-info-container" class="mt-4 text-lg space-y-2"></div>
             <div id="club-check-ins-container" class="mt-8"></div>
             <button id="start-over-btn" class="w-full px-8 py-4 text-white bg-cyan-600 rounded-md hover:bg-cyan-700 text-xl mt-8">Done</button>
         </div>
 
+        <!-- Reusable loader and error components -->
         <div id="loader" class="hidden items-center justify-center mt-6">
             <div class="spinner"></div>
             <p class="ml-4 text-gray-600">Please wait...</p>
@@ -59,6 +72,7 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
+            // --- Element References ---
             const stages = { setup: document.getElementById('stage-setup'), search: document.getElementById('stage-1-search'), results: document.getElementById('stage-2-results'), welcome: document.getElementById('stage-3-welcome') };
             const saveTokenBtn = document.getElementById('save-token-btn');
             const searchBtn = document.getElementById('search-btn');
@@ -68,24 +82,29 @@
             const clubCheckInsContainer = document.getElementById('club-check-ins-container');
             const startOverBtn = document.getElementById('start-over-btn');
             const backToSearchBtn = document.getElementById('back-to-search-btn');
+            const checkInSelectedBtn = document.getElementById('check-in-selected-btn');
             const loader = document.getElementById('loader');
             const errorBox = document.getElementById('error-box');
 
+            // --- State Variables ---
             let squareAccessToken = null;
             let allSegmentsMap = new Map();
-            let selectedCustomer = null;
             let clubCheckInItems = [];
             let lockerRentalVariationIds = new Map();
             let locationId = null;
+            let searchedCustomers = []; // Store the full customer objects from the search
+            let selectedCustomers = []; // Store the selected customer objects
 
             const API_PROXY_URL = 'https://square-checkin-backend.onrender.com';
 
+            // --- UI Helper Functions ---
             const showLoader = (message) => { Object.values(stages).forEach(s => s.classList.remove('active-stage')); loader.querySelector('p').textContent = message || 'Processing...'; loader.style.display = 'flex'; errorBox.style.display = 'none'; };
             const hideLoader = () => loader.style.display = 'none';
             const showError = (message) => { errorBox.textContent = `Error: ${message}`; errorBox.style.display = 'block'; };
             const hideError = () => errorBox.style.display = 'none';
             const showStage = (stageName) => { hideLoader(); hideError(); Object.values(stages).forEach(s => s.classList.remove('active-stage')); if (stages[stageName]) stages[stageName].classList.add('active-stage'); };
             
+            // --- API Fetch Function ---
             const apiFetch = async (endpoint, options = {}) => {
                 const response = await fetch(`${API_PROXY_URL}/api${endpoint}`, {
                     ...options,
@@ -96,73 +115,23 @@
                 return data;
             };
 
+            // --- Initial Data Fetching ---
             const fetchInitialData = async () => {
                 showLoader('Activating kiosk and fetching catalog...');
                 try {
                     await Promise.all([ fetchAllSegments(), fetchClubCheckInItems(), fetchLockerRentalInfo(), fetchLocationId() ]);
                     showStage('search');
                 } catch (error) {
-                    showError(error.message);
+                    showError(`Could not connect to the backend. ${error.message}`);
                     showStage('setup');
                 }
             };
-            
-            const fetchAllSegments = async () => {
-                const data = await apiFetch('/v2/customers/segments');
-                allSegmentsMap.clear();
-                if (data.segments) data.segments.forEach(s => allSegmentsMap.set(s.id, s.name));
-            };
+            const fetchAllSegments = async () => { /* ... no changes ... */ const data = await apiFetch('/v2/customers/segments'); allSegmentsMap.clear(); if (data.segments) data.segments.forEach(s => allSegmentsMap.set(s.id, s.name)); };
+            const fetchClubCheckInItems = async () => { /* ... no changes ... */ try { const categoryData = await apiFetch('/v2/catalog/search', { method: 'POST', body: JSON.stringify({ object_types: ["CATEGORY"] }) }); const category = categoryData.objects?.find(obj => obj.category_data.name.toLowerCase() === 'kiosk check-ins'); if (!category) { console.warn('"Kiosk Check-Ins" category not found.'); return; } const itemsData = await apiFetch('/v2/catalog/search-catalog-items', { method: 'POST', body: JSON.stringify({ "category_ids": [category.id] }) }); if (itemsData.items) { clubCheckInItems = itemsData.items.map(item => ({ name: item.item_data.name, id: item.item_data.variations?.[0]?.id })).filter(item => item.id); } } catch (error) { console.error("Could not fetch club check-in items:", error); } };
+            const fetchLockerRentalInfo = async () => { /* ... no changes ... */ try { const itemData = await apiFetch('/v2/catalog/search', { method: 'POST', body: JSON.stringify({ object_types: ["ITEM"], query: { text_query: { keywords: ["Locker Rentals"] } } }) }); const lockerItem = itemData.objects?.find(obj => obj.item_data.name.toLowerCase() === 'locker rentals'); if (lockerItem && lockerItem.item_data.variations) { lockerItem.item_data.variations.forEach(variation => { lockerRentalVariationIds.set(variation.id, variation.item_variation_data.name); }); } } catch (error) { console.warn("Could not fetch locker rental info. This feature will be disabled.", error); } };
+            const fetchLocationId = async () => { /* ... no changes ... */ const data = await apiFetch('/v2/locations'); const activeLocation = data.locations?.find(loc => loc.status === 'ACTIVE'); if (!activeLocation) throw new Error('No active location found for this business.'); locationId = activeLocation.id; };
 
-            const fetchClubCheckInItems = async () => {
-                try {
-                    const categoryData = await apiFetch('/v2/catalog/search', {
-                        method: 'POST',
-                        body: JSON.stringify({ object_types: ["CATEGORY"] })
-                    });
-                    const category = categoryData.objects?.find(obj => obj.category_data.name.toLowerCase() === 'kiosk check-ins');
-                    if (!category) {
-                        console.warn('"Kiosk Check-Ins" category not found.');
-                        return;
-                    }
-                    const itemsData = await apiFetch('/v2/catalog/search-catalog-items', {
-                        method: 'POST',
-                        body: JSON.stringify({ "category_ids": [category.id] })
-                    });
-                    if (itemsData.items) {
-                        clubCheckInItems = itemsData.items.map(item => ({
-                            name: item.item_data.name,
-                            id: item.item_data.variations?.[0]?.id
-                        })).filter(item => item.id);
-                    }
-                } catch (error) {
-                    console.error("Could not fetch club check-in items:", error);
-                }
-            };
-
-            const fetchLockerRentalInfo = async () => {
-                try {
-                    const itemData = await apiFetch('/v2/catalog/search', {
-                        method: 'POST',
-                        body: JSON.stringify({ object_types: ["ITEM"], query: { text_query: { keywords: ["Locker Rentals"] } } })
-                    });
-                    const lockerItem = itemData.objects?.find(obj => obj.item_data.name.toLowerCase() === 'locker rentals');
-                    if (lockerItem && lockerItem.item_data.variations) {
-                        lockerItem.item_data.variations.forEach(variation => {
-                            lockerRentalVariationIds.set(variation.id, variation.item_variation_data.name);
-                        });
-                    }
-                } catch (error) {
-                    console.warn("Could not fetch locker rental info. This feature will be disabled.", error);
-                }
-            };
-
-            const fetchLocationId = async () => {
-                const data = await apiFetch('/v2/locations');
-                const activeLocation = data.locations?.find(loc => loc.status === 'ACTIVE');
-                if (!activeLocation) throw new Error('No active location found for this business.');
-                locationId = activeLocation.id;
-            };
-
+            // --- Core Application Logic ---
             const searchCustomers = async () => {
                 const searchValue = document.getElementById('search-value').value.trim();
                 if (!searchValue) return;
@@ -176,26 +145,21 @@
                         method: 'POST',
                         body: JSON.stringify({ query: { filter: { phone_number: { exact: formattedPhone } } } })
                     });
-                    displayCustomerResults(data.customers || []);
+                    searchedCustomers = data.customers || [];
+                    displayCustomerResults();
                     showStage('results');
                 } catch (error) {
-                    showError(error.message);
+                    showError(`Could not connect to the backend. ${error.message}`);
                     showStage('search');
                 }
             };
             
-            const handleCustomerSelection = async (customer) => {
-                selectedCustomer = customer;
-                showStage('welcome');
-                displayWelcomeMessage();
-                displayClubCheckInButtons();
-                await displayLockerRentalStatus();
-            };
-
-            const displayCustomerResults = (customers) => {
+            const displayCustomerResults = () => {
                 resultsList.innerHTML = '';
-                if (customers.length === 0) {
-                    // UPDATED: Show waiver button when no customers are found
+                selectedCustomers = []; // Clear previous selections
+                checkInSelectedBtn.disabled = true;
+
+                if (searchedCustomers.length === 0) {
                     resultsList.innerHTML = `
                         <p class="text-gray-500 text-center p-4 text-xl">No customers found with that phone number.</p>
                         <a href="https://www.socialmedium.space/waiver" target="_blank" class="block w-full mt-4 px-8 py-4 text-white bg-green-600 rounded-md hover:bg-green-700 text-xl">
@@ -204,71 +168,106 @@
                     `;
                     return;
                 }
-                customers.forEach(customer => {
-                    const button = document.createElement('button');
-                    button.className = 'w-full text-center p-4 bg-white border-2 border-gray-300 rounded-md hover:border-cyan-500 focus:border-cyan-500 transition-all text-2xl font-semibold';
-                    button.textContent = `${customer.given_name || ''} ${customer.family_name || ''}`;
-                    button.onclick = () => handleCustomerSelection(customer);
-                    resultsList.appendChild(button);
+
+                searchedCustomers.forEach(customer => {
+                    const card = document.createElement('div');
+                    card.className = 'customer-card w-full text-center p-4 bg-white border-2 border-gray-300 rounded-md hover:border-cyan-500 focus:border-cyan-500 transition-all text-2xl font-semibold cursor-pointer';
+                    card.textContent = `${customer.given_name || ''} ${customer.family_name || ''}`;
+                    card.dataset.customerId = customer.id;
+                    card.onclick = () => toggleCustomerSelection(customer, card);
+                    resultsList.appendChild(card);
                 });
             };
 
+            const toggleCustomerSelection = (customer, cardElement) => {
+                const index = selectedCustomers.findIndex(c => c.id === customer.id);
+                if (index > -1) {
+                    selectedCustomers.splice(index, 1); // Remove if already selected
+                    cardElement.classList.remove('selected');
+                } else {
+                    selectedCustomers.push(customer); // Add if not selected
+                    cardElement.classList.add('selected');
+                }
+                checkInSelectedBtn.disabled = selectedCustomers.length === 0;
+            };
+
+            const proceedWithSelection = async () => {
+                if (selectedCustomers.length === 0) return;
+                showStage('welcome');
+                displayWelcomeMessage();
+                displayClubCheckInButtons();
+                await displayLockerRentalStatus();
+            };
+
             const displayWelcomeMessage = () => {
-                if (!selectedCustomer) return;
-                const segmentIds = selectedCustomer.segment_ids || [];
-                const thankYouMessages = [];
-                segmentIds.forEach(id => {
-                    const name = allSegmentsMap.get(id) || '';
-                    if (name.toLowerCase().includes('current')) {
-                        const modifiedName = name.replace(/current/i, '').trim();
-                        const article = /^[aeiou]/i.test(modifiedName) ? 'an' : 'a';
-                        thankYouMessages.push(`Thank you for being ${article} ${modifiedName}`);
-                    }
+                if (selectedCustomers.length === 0) return;
+                
+                const names = selectedCustomers.map(c => c.given_name || '').join(', ');
+                const allThankYouMessages = new Set(); // Use a Set to avoid duplicate messages
+
+                selectedCustomers.forEach(customer => {
+                    const segmentIds = customer.segment_ids || [];
+                    segmentIds.forEach(id => {
+                        const name = allSegmentsMap.get(id) || '';
+                        if (name.toLowerCase().includes('current')) {
+                            const modifiedName = name.replace(/current/i, '').trim();
+                            const article = /^[aeiou]/i.test(modifiedName) ? 'an' : 'a';
+                            allThankYouMessages.add(`Thank you for being ${article} ${modifiedName}`);
+                        }
+                    });
                 });
-                let membershipHTML = '<p class="text-2xl text-red-500">No Current Membership Found</p>';
-                if (thankYouMessages.length > 0) {
-                    membershipHTML = thankYouMessages.map(message => `<li class="text-2xl font-medium text-gray-700 list-none">${message}</li>`).join('');
+
+                let membershipHTML = `<p class="text-2xl text-red-500">No Current Membership Found</p>`;
+                if (allThankYouMessages.size > 0) {
+                    membershipHTML = [...allThankYouMessages].map(message => `<li class="text-2xl font-medium text-gray-700 list-none">${message}</li>`).join('');
                     membershipHTML = `<ul class="space-y-2">${membershipHTML}</ul>`;
                 }
-                welcomeMessageContainer.innerHTML = `<h1 class="text-5xl font-bold text-gray-800 mb-4">Welcome, ${selectedCustomer.given_name || ''}!</h1>${membershipHTML}`;
+                
+                welcomeMessageContainer.innerHTML = `<h1 class="text-5xl font-bold text-gray-800 mb-4">Welcome, ${names}!</h1>${membershipHTML}`;
             };
 
             const displayLockerRentalStatus = async () => {
                 lockerInfoContainer.innerHTML = '';
                 if (lockerRentalVariationIds.size === 0) return;
 
-                try {
-                    const now = new Date();
-                    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-                    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                const lockerRentalsFound = [];
 
-                    const orderData = await apiFetch('/v2/orders/search', {
-                        method: 'POST',
-                        body: JSON.stringify({
-                            location_ids: [locationId],
-                            query: {
-                                filter: {
-                                    customer_filter: { customer_ids: [selectedCustomer.id] },
-                                    date_time_filter: { closed_at: { start_at: startOfMonth.toISOString(), end_at: endOfMonth.toISOString() } },
-                                    state_filter: { states: ["COMPLETED"] }
+                for (const customer of selectedCustomers) {
+                    try {
+                        const now = new Date();
+                        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+                        const orderData = await apiFetch('/v2/orders/search', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                location_ids: [locationId],
+                                query: {
+                                    filter: {
+                                        customer_filter: { customer_ids: [customer.id] },
+                                        date_time_filter: { closed_at: { start_at: startOfMonth.toISOString(), end_at: endOfMonth.toISOString() } },
+                                        state_filter: { states: ["COMPLETED"] }
+                                    }
                                 }
-                            }
-                        })
-                    });
+                            })
+                        });
 
-                    if (orderData.orders) {
-                        for (const order of orderData.orders) {
-                            for (const lineItem of order.line_items) {
-                                if (lockerRentalVariationIds.has(lineItem.catalog_object_id)) {
-                                    const lockerSize = lockerRentalVariationIds.get(lineItem.catalog_object_id);
-                                    lockerInfoContainer.innerHTML = `<p class="text-2xl font-medium text-gray-700">Locker Rental: ${lockerSize}</p>`;
-                                    return; 
+                        if (orderData.orders) {
+                            for (const order of orderData.orders) {
+                                for (const lineItem of order.line_items) {
+                                    if (lockerRentalVariationIds.has(lineItem.catalog_object_id)) {
+                                        const lockerSize = lockerRentalVariationIds.get(lineItem.catalog_object_id);
+                                        lockerRentalsFound.push(`<p class="text-2xl font-medium text-gray-700">${customer.given_name}: ${lockerSize} Locker Rental</p>`);
+                                    }
                                 }
                             }
                         }
+                    } catch (error) {
+                        console.error(`Error checking locker rental for ${customer.given_name}:`, error);
                     }
-                } catch (error) {
-                    console.error("Error checking for locker rental:", error);
+                }
+                if (lockerRentalsFound.length > 0) {
+                    lockerInfoContainer.innerHTML = lockerRentalsFound.join('');
                 }
             };
 
@@ -294,14 +293,22 @@
             const createItemPurchase = async (itemId, buttonElement) => {
                 buttonElement.disabled = true;
                 buttonElement.innerHTML = '<div class="flex justify-center items-center"><div class="spinner"></div></div>';
+                
+                const purchasePromises = selectedCustomers.map(customer => {
+                    const orderPayload = { idempotency_key: crypto.randomUUID(), order: { location_id: locationId, customer_id: customer.id, line_items: [{ catalog_object_id: itemId, quantity: '1' }] } };
+                    return apiFetch('/v2/orders', { method: 'POST', body: JSON.stringify(orderPayload) })
+                        .then(orderData => {
+                            const payPayload = { idempotency_key: crypto.randomUUID(), payment_ids: [] };
+                            return apiFetch(`/v2/orders/${orderData.order.id}/pay`, { method: 'POST', body: JSON.stringify(payPayload) });
+                        });
+                });
+
                 try {
-                    const orderPayload = { idempotency_key: crypto.randomUUID(), order: { location_id: locationId, customer_id: selectedCustomer.id, line_items: [{ catalog_object_id: itemId, quantity: '1' }] } };
-                    const orderData = await apiFetch('/v2/orders', { method: 'POST', body: JSON.stringify(orderPayload) });
-                    const payPayload = { idempotency_key: crypto.randomUUID(), payment_ids: [] };
-                    await apiFetch(`/v2/orders/${orderData.order.id}/pay`, { method: 'POST', body: JSON.stringify(payPayload) });
+                    await Promise.all(purchasePromises);
                     buttonElement.className = 'p-4 bg-green-500 text-white rounded-md font-semibold';
                     buttonElement.textContent = '✓ Recorded';
                 } catch (error) {
+                    console.error("One or more check-ins failed:", error);
                     buttonElement.className = 'p-4 bg-red-500 text-white rounded-md font-semibold';
                     buttonElement.textContent = 'Failed';
                     setTimeout(() => {
@@ -312,6 +319,7 @@
                 }
             };
 
+            // --- Event Listeners ---
             saveTokenBtn.addEventListener('click', () => {
                 const tokenInput = document.getElementById('square-token');
                 squareAccessToken = tokenInput.value.trim();
@@ -320,8 +328,9 @@
             });
 
             searchBtn.addEventListener('click', searchCustomers);
-            startOverBtn.addEventListener('click', () => { document.getElementById('search-value').value = ''; selectedCustomer = null; showStage('search'); });
-            backToSearchBtn.addEventListener('click', () => { document.getElementById('search-value').value = ''; selectedCustomer = null; showStage('search'); });
+            checkInSelectedBtn.addEventListener('click', proceedWithSelection);
+            startOverBtn.addEventListener('click', () => { document.getElementById('search-value').value = ''; selectedCustomers = []; showStage('search'); });
+            backToSearchBtn.addEventListener('click', () => { document.getElementById('search-value').value = ''; selectedCustomers = []; showStage('search'); });
         });
     </script>
 </body>
