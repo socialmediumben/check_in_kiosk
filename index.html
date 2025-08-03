@@ -91,8 +91,8 @@
 
             // --- State Variables ---
             let squareAccessToken = null;
-            let allSegmentsMap = new Map();
-            let customAttributeDefinitionsMap = new Map(); // To store custom attribute definitions
+            // FIX: Use a single map to hold both groups and segments
+            let allListsMap = new Map();
             let clubCheckInItems = [];
             let lockerRentalVariationIds = new Map();
             let locationId = null;
@@ -123,26 +123,30 @@
             const fetchInitialData = async () => {
                 showLoader('Activating kiosk and fetching catalog...');
                 try {
-                    // Added fetchCustomAttributeDefinitions to the initial data fetch
-                    await Promise.all([ fetchAllSegments(), fetchClubCheckInItems(), fetchLockerRentalInfo(), fetchLocationId(), fetchCustomAttributeDefinitions() ]);
+                    // FIX: Fetch both groups and segments, then combine them.
+                    const [groupsData, segmentsData] = await Promise.all([
+                        apiFetch('/v2/customers/groups'),
+                        apiFetch('/v2/customers/segments')
+                    ]);
+
+                    allListsMap.clear();
+                    if (groupsData.groups) {
+                        groupsData.groups.forEach(group => allListsMap.set(group.id, group.name));
+                    }
+                    if (segmentsData.segments) {
+                        segmentsData.segments.forEach(segment => allListsMap.set(segment.id, segment.name));
+                    }
+
+                    // Fetch the rest of the data
+                    await Promise.all([fetchClubCheckInItems(), fetchLockerRentalInfo(), fetchLocationId()]);
+                    
                     showStage('search');
                 } catch (error) {
-                    showError(`Could not connect to the backend. ${error.message}`);
-                    showStage('setup');
-                }
-            };
-
-            const fetchCustomAttributeDefinitions = async () => {
-                const data = await apiFetch('/v2/customers/custom-attribute-definitions');
-                customAttributeDefinitionsMap.clear();
-                if (data.custom_attribute_definitions) {
-                    data.custom_attribute_definitions.forEach(def => {
-                        customAttributeDefinitionsMap.set(def.key, def.name);
-                    });
+                    hideLoader();
+                    showError(`Initialization failed: ${error.message}`);
                 }
             };
             
-            const fetchAllSegments = async () => { const data = await apiFetch('/v2/customers/segments'); allSegmentsMap.clear(); if (data.segments) data.segments.forEach(s => allSegmentsMap.set(s.id, s.name)); };
             const fetchClubCheckInItems = async () => { try { const categoryData = await apiFetch('/v2/catalog/search', { method: 'POST', body: JSON.stringify({ object_types: ["CATEGORY"] }) }); const category = categoryData.objects?.find(obj => obj.category_data.name.toLowerCase() === 'kiosk check-ins'); if (!category) { console.warn('"Kiosk Check-Ins" category not found.'); return; } const itemsData = await apiFetch('/v2/catalog/search-catalog-items', { method: 'POST', body: JSON.stringify({ "category_ids": [category.id] }) }); if (itemsData.items) { clubCheckInItems = itemsData.items.map(item => ({ name: item.item_data.name, id: item.item_data.variations?.[0]?.id })).filter(item => item.id); } } catch (error) { console.error("Could not fetch club check-in items:", error); } };
             const fetchLockerRentalInfo = async () => { try { const itemData = await apiFetch('/v2/catalog/search', { method: 'POST', body: JSON.stringify({ object_types: ["ITEM"], query: { text_query: { keywords: ["Locker Rentals"] } } }) }); const lockerItem = itemData.objects?.find(obj => obj.item_data.name.toLowerCase() === 'locker rentals'); if (lockerItem && lockerItem.item_data.variations) { lockerItem.item_data.variations.forEach(variation => { lockerRentalVariationIds.set(variation.id, variation.item_variation_data.name); }); } } catch (error) { console.warn("Could not fetch locker rental info. This feature will be disabled.", error); } };
             const fetchLocationId = async () => { const data = await apiFetch('/v2/locations'); const activeLocation = data.locations?.find(loc => loc.status === 'ACTIVE'); if (!activeLocation) throw new Error('No active location found for this business.'); locationId = activeLocation.id; };
@@ -165,8 +169,8 @@
                     displayCustomerResults();
                     showStage('results');
                 } catch (error) {
-                    showError(`Could not connect to the backend. ${error.message}`);
-                    showStage('search');
+                    hideLoader();
+                    showError(`Search failed: ${error.message}`);
                 }
             };
             
@@ -211,7 +215,7 @@
                 if (selectedCustomers.length === 0) return;
                 showStage('welcome');
                 displayWelcomeMessage();
-                displayInterests(); // New function call
+                displayInterests();
                 displayClubCheckInButtons();
                 await displayLockerRentalStatus();
             };
@@ -225,7 +229,8 @@
                 selectedCustomers.forEach(customer => {
                     const segmentIds = customer.segment_ids || [];
                     segmentIds.forEach(id => {
-                        const name = allSegmentsMap.get(id) || '';
+                        // FIX: Use the combined map
+                        const name = allListsMap.get(id) || '';
                         if (name.toLowerCase().includes('current')) {
                             const modifiedName = name.replace(/current/i, '').trim();
                             const article = /^[aeiou]/i.test(modifiedName) ? 'an' : 'a';
@@ -248,19 +253,21 @@
                 let allInterestsHTML = '';
 
                 selectedCustomers.forEach(customer => {
-                    const customerInterests = [];
-                    if (customer.custom_attributes) {
-                        for (const [key, attribute] of Object.entries(customer.custom_attributes)) {
-                            const definitionName = customAttributeDefinitionsMap.get(attribute.key);
-                            if (definitionName && definitionName.startsWith('T: ') && attribute.value === 'yes') {
-                                customerInterests.push(definitionName.replace('T: ', '').trim());
-                            }
-                        }
-                    }
+                    const customerInterests = new Set(); // Use a Set to avoid duplicates
+                    
+                    // FIX: Combine group_ids and segment_ids to check against the combined map
+                    const allIds = [...(customer.group_ids || []), ...(customer.segment_ids || [])];
 
-                    if (customerInterests.length > 0) {
+                    allIds.forEach(id => {
+                        const name = allListsMap.get(id);
+                        if (name && name.startsWith('T:')) {
+                            customerInterests.add(name.replace('T:', '').trim());
+                        }
+                    });
+
+                    if (customerInterests.size > 0) {
                         let customerInterestsHTML = `<div class="mb-6">
-                            <h3 class="text-2xl font-bold text-gray-800">${customer.given_name} is nerdy for...</h3>
+                            <h3 class="text-2xl font-bold text-gray-800 text-center">${customer.given_name} is nerdy for...</h3>
                             <ul class="flex flex-wrap justify-center gap-2 mt-3">`;
                         
                         customerInterests.forEach(interest => {
