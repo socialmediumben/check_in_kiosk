@@ -19,10 +19,10 @@
         }
     </style>
 </head>
-<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+<body class="bg-gray-100 flex flex-col items-center justify-center min-h-screen p-4">
 
-    <div class="w-full max-w-xl mx-auto bg-white p-8 rounded-2xl shadow-lg text-center">
-
+    <!-- This container now only holds the initial stages -->
+    <div id="main-container" class="w-full max-w-xl mx-auto text-center bg-white p-8 rounded-2xl shadow-lg">
         <!-- Stage for Admin to enter Square Access Token -->
         <div id="stage-setup" class="stage active-stage">
             <h1 class="text-3xl font-bold text-gray-800">Admin Setup</h1>
@@ -53,36 +53,30 @@
                 <button id="check-in-selected-btn" class="px-8 py-3 text-white bg-cyan-600 rounded-md hover:bg-cyan-700 text-xl disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>Check In Selected</button>
             </div>
         </div>
-        
-        <!-- Stage 3: Welcome message and further actions for multiple customers -->
-        <div id="stage-3-welcome" class="stage">
-            <div id="welcome-message" class="mb-8"></div>
-            <div id="locker-info-container" class="mt-4 text-lg space-y-2"></div>
-            <!-- Container for interests -->
-            <div id="interests-container" class="mt-6 text-left border-t pt-6"></div>
-            <div id="club-check-ins-container" class="mt-8"></div>
-            <button id="start-over-btn" class="w-full px-8 py-4 text-white bg-cyan-600 rounded-md hover:bg-cyan-700 text-xl mt-8">Done</button>
-        </div>
-
-        <!-- Reusable loader and error components -->
-        <div id="loader" class="hidden items-center justify-center mt-6">
-            <div class="spinner"></div>
-            <p class="ml-4 text-gray-600">Please wait...</p>
-        </div>
-        <div id="error-box" class="hidden mt-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded-md"></div>
     </div>
+    
+    <!-- Stage 3: Welcome message is now a separate container -->
+    <div id="stage-3-welcome" class="stage w-full max-w-4xl mx-auto">
+        <div id="welcome-cards-container" class="grid grid-cols-1 md:grid-cols-2 gap-8"></div>
+        <button id="start-over-btn" class="w-full px-8 py-4 text-white bg-cyan-600 rounded-md hover:bg-cyan-700 text-xl mt-8">Done</button>
+    </div>
+
+    <!-- Reusable loader and error components -->
+    <div id="loader" class="hidden items-center justify-center mt-6">
+        <div class="spinner"></div>
+        <p class="ml-4 text-gray-600">Please wait...</p>
+    </div>
+    <div id="error-box" class="hidden mt-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded-md"></div>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             // --- Element References ---
             const stages = { setup: document.getElementById('stage-setup'), search: document.getElementById('stage-1-search'), results: document.getElementById('stage-2-results'), welcome: document.getElementById('stage-3-welcome') };
+            const mainContainer = document.getElementById('main-container');
             const saveTokenBtn = document.getElementById('save-token-btn');
             const searchBtn = document.getElementById('search-btn');
             const resultsList = document.getElementById('results-list');
-            const welcomeMessageContainer = document.getElementById('welcome-message');
-            const lockerInfoContainer = document.getElementById('locker-info-container');
-            const interestsContainer = document.getElementById('interests-container');
-            const clubCheckInsContainer = document.getElementById('club-check-ins-container');
+            const welcomeCardsContainer = document.getElementById('welcome-cards-container');
             const startOverBtn = document.getElementById('start-over-btn');
             const backToSearchBtn = document.getElementById('back-to-search-btn');
             const checkInSelectedBtn = document.getElementById('check-in-selected-btn');
@@ -91,7 +85,6 @@
 
             // --- State Variables ---
             let squareAccessToken = null;
-            // FIX: Use a single map to hold both groups and segments
             let allListsMap = new Map();
             let clubCheckInItems = [];
             let lockerRentalVariationIds = new Map();
@@ -102,11 +95,42 @@
             const API_PROXY_URL = 'https://square-checkin-backend.onrender.com';
 
             // --- UI Helper Functions ---
-            const showLoader = (message) => { Object.values(stages).forEach(s => s.classList.remove('active-stage')); loader.querySelector('p').textContent = message || 'Processing...'; loader.style.display = 'flex'; errorBox.style.display = 'none'; };
-            const hideLoader = () => loader.style.display = 'none';
-            const showError = (message) => { errorBox.textContent = `Error: ${message}`; errorBox.style.display = 'block'; };
+            const showLoader = (message) => { 
+                Object.values(stages).forEach(s => s.classList.remove('active-stage')); 
+                mainContainer.style.display = 'none'; 
+                loader.querySelector('p').textContent = message || 'Processing...'; 
+                loader.style.display = 'flex'; 
+                errorBox.style.display = 'none'; 
+            };
+            const hideLoader = () => { 
+                loader.style.display = 'none';
+            };
+            const showError = (message) => { 
+                errorBox.textContent = `Error: ${message}`; 
+                errorBox.style.display = 'block'; 
+            };
             const hideError = () => errorBox.style.display = 'none';
-            const showStage = (stageName) => { hideLoader(); hideError(); Object.values(stages).forEach(s => s.classList.remove('active-stage')); if (stages[stageName]) stages[stageName].classList.add('active-stage'); };
+            
+            const showStage = (stageName) => { 
+                hideLoader(); 
+                hideError(); 
+                
+                // Hide all stage containers first
+                mainContainer.style.display = 'none';
+                stages.welcome.style.display = 'none';
+
+                if (stages[stageName]) {
+                    if (stageName === 'welcome') {
+                        // Show only the welcome stage container
+                        stages.welcome.style.display = 'block';
+                    } else {
+                        // Show the main container and activate the correct stage inside it
+                        mainContainer.style.display = 'block';
+                        Object.values(stages).forEach(s => s.classList.remove('active-stage'));
+                        stages[stageName].classList.add('active-stage');
+                    }
+                }
+            };
             
             // --- API Fetch Function ---
             const apiFetch = async (endpoint, options = {}) => {
@@ -123,7 +147,6 @@
             const fetchInitialData = async () => {
                 showLoader('Activating kiosk and fetching catalog...');
                 try {
-                    // FIX: Fetch both groups and segments, then combine them.
                     const [groupsData, segmentsData] = await Promise.all([
                         apiFetch('/v2/customers/groups'),
                         apiFetch('/v2/customers/segments')
@@ -137,7 +160,6 @@
                         segmentsData.segments.forEach(segment => allListsMap.set(segment.id, segment.name));
                     }
 
-                    // Fetch the rest of the data
                     await Promise.all([fetchClubCheckInItems(), fetchLockerRentalInfo(), fetchLocationId()]);
                     
                     showStage('search');
@@ -213,80 +235,147 @@
 
             const proceedWithSelection = async () => {
                 if (selectedCustomers.length === 0) return;
+                
+                welcomeCardsContainer.innerHTML = ''; // Clear previous cards
                 showStage('welcome');
-                displayWelcomeMessage();
-                displayInterests();
-                displayClubCheckInButtons();
-                await displayLockerRentalStatus();
+
+                for (const customer of selectedCustomers) {
+                    const card = await createWelcomeCard(customer);
+                    welcomeCardsContainer.appendChild(card);
+                }
             };
 
-            const displayWelcomeMessage = () => {
-                if (selectedCustomers.length === 0) return;
-                
-                const names = selectedCustomers.map(c => c.given_name || '').join(', ');
-                const allThankYouMessages = new Set(); 
+            const createWelcomeCard = async (customer) => {
+                const card = document.createElement('div');
+                card.className = 'bg-white p-6 rounded-2xl shadow-lg text-center';
 
-                selectedCustomers.forEach(customer => {
-                    const segmentIds = customer.segment_ids || [];
-                    segmentIds.forEach(id => {
-                        // FIX: Use the combined map
-                        const name = allListsMap.get(id) || '';
-                        if (name.toLowerCase().includes('current')) {
-                            const modifiedName = name.replace(/current/i, '').trim();
-                            const article = /^[aeiou]/i.test(modifiedName) ? 'an' : 'a';
-                            allThankYouMessages.add(`Thank you for being ${article} ${modifiedName}`);
-                        }
-                    });
+                const welcomeMessage = getWelcomeMessageHTML(customer);
+                const lockerStatus = await getLockerStatusHTML(customer);
+                const interests = getInterestsHTML(customer);
+                const checkInButtons = getCheckInButtonsHTML(customer);
+
+                card.innerHTML = welcomeMessage + lockerStatus + interests + checkInButtons;
+
+                card.querySelectorAll('.check-in-btn').forEach(button => {
+                    button.onclick = () => {
+                        const itemId = button.dataset.itemId;
+                        const customerId = button.dataset.customerId;
+                        createItemPurchase(itemId, customerId, button);
+                    };
                 });
 
-                let membershipHTML = `<p class="text-2xl text-red-500">No Current Membership Found</p>`;
-                if (allThankYouMessages.size > 0) {
-                    membershipHTML = [...allThankYouMessages].map(message => `<li class="text-2xl font-medium text-gray-700 list-none">${message}</li>`).join('');
-                    membershipHTML = `<ul class="space-y-2">${membershipHTML}</ul>`;
-                }
-                
-                welcomeMessageContainer.innerHTML = `<h1 class="text-5xl font-bold text-gray-800 mb-4">Welcome, ${names}!</h1>${membershipHTML}`;
+                return card;
             };
 
-            const displayInterests = () => {
-                interestsContainer.innerHTML = '';
-                let allInterestsHTML = '';
-
-                selectedCustomers.forEach(customer => {
-                    const customerInterests = new Set(); // Use a Set to avoid duplicates
-                    
-                    // FIX: Combine group_ids and segment_ids to check against the combined map
-                    const allIds = [...(customer.group_ids || []), ...(customer.segment_ids || [])];
-
-                    allIds.forEach(id => {
-                        const name = allListsMap.get(id);
-                        if (name && name.startsWith('T:')) {
-                            customerInterests.add(name.replace('T:', '').trim());
-                        }
-                    });
-
-                    if (customerInterests.size > 0) {
-                        let customerInterestsHTML = `<div class="mb-6">
-                            <h3 class="text-2xl font-bold text-gray-800 text-center">${customer.given_name} is nerdy for...</h3>
-                            <ul class="flex flex-wrap justify-center gap-2 mt-3">`;
-                        
-                        customerInterests.forEach(interest => {
-                            customerInterestsHTML += `<li class="bg-cyan-100 text-cyan-800 text-lg font-medium px-3 py-1 rounded-full">${interest}</li>`;
-                        });
-
-                        customerInterestsHTML += `</ul></div>`;
-                        allInterestsHTML += customerInterestsHTML;
+            const getWelcomeMessageHTML = (customer) => {
+                const allThankYouMessages = new Set(); 
+                const segmentIds = customer.segment_ids || [];
+                segmentIds.forEach(id => {
+                    const name = allListsMap.get(id) || '';
+                    if (name.toLowerCase().includes('current')) {
+                        const modifiedName = name.replace(/current/i, '').trim();
+                        const article = /^[aeiou]/i.test(modifiedName) ? 'an' : 'a';
+                        allThankYouMessages.add(`Thank you for being ${article} ${modifiedName}`);
                     }
                 });
 
-                if (allInterestsHTML) {
-                    interestsContainer.innerHTML = allInterestsHTML;
+                let membershipHTML = `<p class="text-xl text-red-500">No Current Membership Found</p>`;
+                if (allThankYouMessages.size > 0) {
+                    membershipHTML = [...allThankYouMessages].map(message => `<li class="text-xl font-medium text-gray-700 list-none">${message}</li>`).join('');
+                    membershipHTML = `<ul class="space-y-1">${membershipHTML}</ul>`;
                 }
+                
+                return `<div class="mb-4"><h1 class="text-3xl font-bold text-gray-800 mb-2">Welcome, ${customer.given_name || ''}!</h1>${membershipHTML}</div>`;
             };
 
-            const displayLockerRentalStatus = async () => { /* ... no changes ... */ lockerInfoContainer.innerHTML = ''; if (lockerRentalVariationIds.size === 0) return; const lockerRentalsFound = []; for (const customer of selectedCustomers) { try { const now = new Date(); const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1); const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0); const orderData = await apiFetch('/v2/orders/search', { method: 'POST', body: JSON.stringify({ location_ids: [locationId], query: { filter: { customer_filter: { customer_ids: [customer.id] }, date_time_filter: { closed_at: { start_at: startOfMonth.toISOString(), end_at: endOfMonth.toISOString() } }, state_filter: { states: ["COMPLETED"] } } } }) }); if (orderData.orders) { for (const order of orderData.orders) { for (const lineItem of order.line_items) { if (lockerRentalVariationIds.has(lineItem.catalog_object_id)) { const lockerSize = lockerRentalVariationIds.get(lineItem.catalog_object_id); lockerRentalsFound.push(`<p class="text-2xl font-medium text-gray-700">${customer.given_name}: ${lockerSize} Locker Rental</p>`); } } } } } catch (error) { console.error(`Error checking locker rental for ${customer.given_name}:`, error); } } if (lockerRentalsFound.length > 0) { lockerInfoContainer.innerHTML = lockerRentalsFound.join(''); } };
-            const displayClubCheckInButtons = () => { /* ... no changes ... */ clubCheckInsContainer.innerHTML = ''; if (clubCheckInItems.length === 0) return; const title = document.createElement('h2'); title.className = 'text-xl font-semibold text-gray-800 mb-4 mt-8'; title.textContent = 'Record Additional Check-in:'; clubCheckInsContainer.appendChild(title); const buttonGrid = document.createElement('div'); buttonGrid.className = 'grid grid-cols-2 gap-4'; clubCheckInItems.forEach(item => { const button = document.createElement('button'); button.className = 'p-4 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 font-semibold'; button.textContent = item.name.replace(/check-in/i, '').trim(); button.onclick = () => createItemPurchase(item.id, button); buttonGrid.appendChild(button); }); clubCheckInsContainer.appendChild(buttonGrid); };
-            const createItemPurchase = async (itemId, buttonElement) => { /* ... no changes ... */ buttonElement.disabled = true; buttonElement.innerHTML = '<div class="flex justify-center items-center"><div class="spinner"></div></div>'; const purchasePromises = selectedCustomers.map(customer => { const orderPayload = { idempotency_key: crypto.randomUUID(), order: { location_id: locationId, customer_id: customer.id, line_items: [{ catalog_object_id: itemId, quantity: '1' }] } }; return apiFetch('/v2/orders', { method: 'POST', body: JSON.stringify(orderPayload) }) .then(orderData => { const payPayload = { idempotency_key: crypto.randomUUID(), payment_ids: [] }; return apiFetch(`/v2/orders/${orderData.order.id}/pay`, { method: 'POST', body: JSON.stringify(payPayload) }); }); }); try { await Promise.all(purchasePromises); buttonElement.className = 'p-4 bg-green-500 text-white rounded-md font-semibold'; buttonElement.textContent = '✓ Recorded'; } catch (error) { console.error("One or more check-ins failed:", error); buttonElement.className = 'p-4 bg-red-500 text-white rounded-md font-semibold'; buttonElement.textContent = 'Failed'; setTimeout(() => { buttonElement.disabled = false; buttonElement.className = 'p-4 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 font-semibold'; buttonElement.textContent = 'Retry'; }, 3000); } };
+            const getInterestsHTML = (customer) => {
+                const customerInterests = new Set();
+                const allIds = [...(customer.group_ids || []), ...(customer.segment_ids || [])];
+
+                allIds.forEach(id => {
+                    const name = allListsMap.get(id);
+                    if (name && name.startsWith('T:')) {
+                        customerInterests.add(name.replace('T:', '').trim());
+                    }
+                });
+
+                if (customerInterests.size > 0) {
+                    let interestsHTML = `<div class="mt-4 text-left pt-4 border-t">
+                        <h3 class="text-xl font-bold text-gray-800 text-center">${customer.given_name} is nerdy for...</h3>
+                        <ul class="flex flex-wrap justify-center gap-2 mt-2">`;
+                    
+                    customerInterests.forEach(interest => {
+                        interestsHTML += `<li class="bg-cyan-100 text-cyan-800 text-base font-medium px-3 py-1 rounded-full">${interest}</li>`;
+                    });
+
+                    interestsHTML += `</ul></div>`;
+                    return interestsHTML;
+                }
+                return '';
+            };
+
+            const getLockerStatusHTML = async (customer) => { 
+                if (lockerRentalVariationIds.size === 0) return ''; 
+                try { 
+                    const now = new Date(); 
+                    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1); 
+                    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0); 
+                    const orderData = await apiFetch('/v2/orders/search', { method: 'POST', body: JSON.stringify({ location_ids: [locationId], query: { filter: { customer_filter: { customer_ids: [customer.id] }, date_time_filter: { closed_at: { start_at: startOfMonth.toISOString(), end_at: endOfMonth.toISOString() } }, state_filter: { states: ["COMPLETED"] } } } }) }); 
+                    if (orderData.orders) { 
+                        for (const order of orderData.orders) { 
+                            for (const lineItem of order.line_items) { 
+                                if (lockerRentalVariationIds.has(lineItem.catalog_object_id)) { 
+                                    const lockerSize = lockerRentalVariationIds.get(lineItem.catalog_object_id); 
+                                    return `<div class="text-lg space-y-2"><p class="text-xl font-medium text-gray-700">Locker Rental: ${lockerSize}</p></div>`;
+                                } 
+                            } 
+                        } 
+                    } 
+                } catch (error) { 
+                    console.error(`Error checking locker rental for ${customer.given_name}:`, error); 
+                } 
+                return '';
+            };
+            
+            const getCheckInButtonsHTML = (customer) => { 
+                if (clubCheckInItems.length === 0) return ''; 
+                let html = `<div class="mt-6">
+                    <h2 class="text-lg font-semibold text-gray-800 mb-3">Record Additional Check-in:</h2>
+                    <div class="grid grid-cols-2 gap-3">`;
+                
+                clubCheckInItems.forEach(item => { 
+                    html += `<button class="check-in-btn p-3 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 font-semibold text-sm" data-item-id="${item.id}" data-customer-id="${customer.id}">
+                        ${item.name.replace(/check-in/i, '').trim()}
+                    </button>`;
+                }); 
+                
+                html += `</div></div>`;
+                return html;
+            };
+            
+            const createItemPurchase = async (itemId, customerId, buttonElement) => { 
+                buttonElement.disabled = true; 
+                buttonElement.innerHTML = '<div class="flex justify-center items-center"><div class="spinner"></div></div>'; 
+                
+                const orderPayload = { idempotency_key: crypto.randomUUID(), order: { location_id: locationId, customer_id: customerId, line_items: [{ catalog_object_id: itemId, quantity: '1' }] } }; 
+                
+                try {
+                    const orderData = await apiFetch('/v2/orders', { method: 'POST', body: JSON.stringify(orderPayload) });
+                    const payPayload = { idempotency_key: crypto.randomUUID(), payment_ids: [] }; 
+                    await apiFetch(`/v2/orders/${orderData.order.id}/pay`, { method: 'POST', body: JSON.stringify(payPayload) });
+                    buttonElement.className = 'p-3 bg-green-500 text-white rounded-md font-semibold text-sm'; 
+                    buttonElement.textContent = '✓ Recorded'; 
+                } catch (error) { 
+                    console.error("Check-in failed:", error); 
+                    buttonElement.className = 'p-3 bg-red-500 text-white rounded-md font-semibold text-sm'; 
+                    buttonElement.textContent = 'Failed'; 
+                    setTimeout(() => { 
+                        buttonElement.disabled = false; 
+                        buttonElement.className = 'p-3 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 font-semibold text-sm'; 
+                        buttonElement.textContent = 'Retry'; 
+                    }, 3000); 
+                } 
+            };
 
             // --- Event Listeners ---
             saveTokenBtn.addEventListener('click', () => {
@@ -298,8 +387,18 @@
 
             searchBtn.addEventListener('click', searchCustomers);
             checkInSelectedBtn.addEventListener('click', proceedWithSelection);
-            startOverBtn.addEventListener('click', () => { document.getElementById('search-value').value = ''; selectedCustomers = []; showStage('search'); });
-            backToSearchBtn.addEventListener('click', () => { document.getElementById('search-value').value = ''; selectedCustomers = []; showStage('search'); });
+            
+            startOverBtn.addEventListener('click', () => {
+                document.getElementById('search-value').value = ''; 
+                selectedCustomers = []; 
+                showStage('search');
+            });
+
+            backToSearchBtn.addEventListener('click', () => { 
+                document.getElementById('search-value').value = ''; 
+                selectedCustomers = []; 
+                showStage('search'); 
+            });
         });
     </script>
 </body>
