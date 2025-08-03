@@ -24,7 +24,9 @@ app.all('/api/*', async (req, res) => {
       method: req.method,
       headers: {
         'Authorization': `Bearer ${accessToken}`,
-        'Square-Version': '2023-10-18',
+        // FIX: Updated the Square API version to a modern one that supports
+        // returning custom attributes on customer profiles.
+        'Square-Version': '2024-07-22',
         'Content-Type': 'application/json',
       },
       body: req.method !== 'GET' ? JSON.stringify(req.body) : undefined,
@@ -39,6 +41,7 @@ app.all('/api/*', async (req, res) => {
     res.status(200).json(data);
 
   } catch (error) {
+    console.error("Error proxying to Square:", error);
     res.status(500).json({ error: 'An internal server error occurred.' });
   }
 });
