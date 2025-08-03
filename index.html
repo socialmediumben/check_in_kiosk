@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Customer Check-In</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; }
         .stage { display: none; }
@@ -49,14 +49,14 @@
             <p class="text-gray-500 mt-2 mb-8">Please tap all names you'd like to check in.</p>
             <div id="results-list" class="space-y-4"></div>
             <div class="mt-8 flex justify-between items-center">
-                <button id="back-to-search-btn" class="px-6 py-2 text-gray-600 bg-gray-200 rounded-md hover:bg-gray-300">Back to Search</button>
+                <button id="back-to-search-btn" class="px-6 py-2 text-gray-600 bg-white rounded-md hover:bg-gray-100 border">Back to Search</button>
                 <button id="check-in-selected-btn" class="px-8 py-3 text-white bg-cyan-600 rounded-md hover:bg-cyan-700 text-xl disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>Check In Selected</button>
             </div>
         </div>
     </div>
     
     <!-- Stage 3: Welcome message is now a separate container -->
-    <div id="stage-3-welcome" class="stage w-full max-w-4xl mx-auto">
+    <div id="stage-3-welcome" class="stage w-full max-w-5xl mx-auto">
         <div id="welcome-cards-container" class="grid grid-cols-1 md:grid-cols-2 gap-8"></div>
         <button id="start-over-btn" class="w-full px-8 py-4 text-white bg-cyan-600 rounded-md hover:bg-cyan-700 text-xl mt-8">Done</button>
     </div>
@@ -115,16 +115,13 @@
                 hideLoader(); 
                 hideError(); 
                 
-                // Hide all stage containers first
                 mainContainer.style.display = 'none';
                 stages.welcome.style.display = 'none';
 
                 if (stages[stageName]) {
                     if (stageName === 'welcome') {
-                        // Show only the welcome stage container
                         stages.welcome.style.display = 'block';
                     } else {
-                        // Show the main container and activate the correct stage inside it
                         mainContainer.style.display = 'block';
                         Object.values(stages).forEach(s => s.classList.remove('active-stage'));
                         stages[stageName].classList.add('active-stage');
@@ -247,14 +244,12 @@
 
             const createWelcomeCard = async (customer) => {
                 const card = document.createElement('div');
-                card.className = 'bg-white p-6 rounded-2xl shadow-lg text-center';
+                card.className = 'bg-white p-4 rounded-2xl shadow-lg text-left';
 
-                const welcomeMessage = getWelcomeMessageHTML(customer);
-                const lockerStatus = await getLockerStatusHTML(customer);
-                const interests = getInterestsHTML(customer);
+                const nametagContent = getNameTagHTML(customer);
                 const checkInButtons = getCheckInButtonsHTML(customer);
 
-                card.innerHTML = welcomeMessage + lockerStatus + interests + checkInButtons;
+                card.innerHTML = nametagContent + checkInButtons;
 
                 card.querySelectorAll('.check-in-btn').forEach(button => {
                     button.onclick = () => {
@@ -267,80 +262,45 @@
                 return card;
             };
 
-            const getWelcomeMessageHTML = (customer) => {
-                const allThankYouMessages = new Set(); 
+            const getNameTagHTML = (customer) => {
+                let membershipType = 'No Current Membership';
                 const segmentIds = customer.segment_ids || [];
                 segmentIds.forEach(id => {
                     const name = allListsMap.get(id) || '';
-                    if (name.toLowerCase().includes('current')) {
-                        const modifiedName = name.replace(/current/i, '').trim();
-                        const article = /^[aeiou]/i.test(modifiedName) ? 'an' : 'a';
-                        allThankYouMessages.add(`Thank you for being ${article} ${modifiedName}`);
+                    if (name.toLowerCase().startsWith('current ') && !name.startsWith('T:')) {
+                        membershipType = name.replace(/current /i, '').trim();
                     }
                 });
 
-                let membershipHTML = `<p class="text-xl text-red-500">No Current Membership Found</p>`;
-                if (allThankYouMessages.size > 0) {
-                    membershipHTML = [...allThankYouMessages].map(message => `<li class="text-xl font-medium text-gray-700 list-none">${message}</li>`).join('');
-                    membershipHTML = `<ul class="space-y-1">${membershipHTML}</ul>`;
-                }
-                
-                return `<div class="mb-4"><h1 class="text-3xl font-bold text-gray-800 mb-2">Welcome, ${customer.given_name || ''}!</h1>${membershipHTML}</div>`;
-            };
-
-            const getInterestsHTML = (customer) => {
                 const customerInterests = new Set();
                 const allIds = [...(customer.group_ids || []), ...(customer.segment_ids || [])];
-
                 allIds.forEach(id => {
                     const name = allListsMap.get(id);
                     if (name && name.startsWith('T:')) {
                         customerInterests.add(name.replace('T:', '').trim());
                     }
                 });
+                const interestsString = [...customerInterests].join(', ');
 
-                if (customerInterests.size > 0) {
-                    let interestsHTML = `<div class="mt-4 text-left pt-4 border-t">
-                        <h3 class="text-xl font-bold text-gray-800 text-center">${customer.given_name} is nerdy for...</h3>
-                        <ul class="flex flex-wrap justify-center gap-2 mt-2">`;
-                    
-                    customerInterests.forEach(interest => {
-                        interestsHTML += `<li class="bg-cyan-100 text-cyan-800 text-base font-medium px-3 py-1 rounded-full">${interest}</li>`;
-                    });
-
-                    interestsHTML += `</ul></div>`;
-                    return interestsHTML;
-                }
-                return '';
-            };
-
-            const getLockerStatusHTML = async (customer) => { 
-                if (lockerRentalVariationIds.size === 0) return ''; 
-                try { 
-                    const now = new Date(); 
-                    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1); 
-                    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0); 
-                    const orderData = await apiFetch('/v2/orders/search', { method: 'POST', body: JSON.stringify({ location_ids: [locationId], query: { filter: { customer_filter: { customer_ids: [customer.id] }, date_time_filter: { closed_at: { start_at: startOfMonth.toISOString(), end_at: endOfMonth.toISOString() } }, state_filter: { states: ["COMPLETED"] } } } }) }); 
-                    if (orderData.orders) { 
-                        for (const order of orderData.orders) { 
-                            for (const lineItem of order.line_items) { 
-                                if (lockerRentalVariationIds.has(lineItem.catalog_object_id)) { 
-                                    const lockerSize = lockerRentalVariationIds.get(lineItem.catalog_object_id); 
-                                    return `<div class="text-lg space-y-2"><p class="text-xl font-medium text-gray-700">Locker Rental: ${lockerSize}</p></div>`;
-                                } 
-                            } 
-                        } 
-                    } 
-                } catch (error) { 
-                    console.error(`Error checking locker rental for ${customer.given_name}:`, error); 
-                } 
-                return '';
+                return `
+                    <div class="border-4 border-black rounded-xl p-4 relative">
+                        <div class="absolute top-4 right-4 border-2 border-black rounded-full h-20 w-20 flex items-center justify-center text-center text-xs font-semibold p-1">
+                            ${membershipType}
+                        </div>
+                        <div class="text-8xl font-black">${customer.given_name || ''}</div>
+                        <div class="mt-4 text-xl">Pronouns: _______________</div>
+                        <div class="mt-6">
+                            <div class="text-2xl font-bold">I'm Nerdy for...</div>
+                            <div class="text-xl mt-1">${interestsString || 'N/A'}</div>
+                        </div>
+                    </div>
+                `;
             };
             
             const getCheckInButtonsHTML = (customer) => { 
                 if (clubCheckInItems.length === 0) return ''; 
-                let html = `<div class="mt-6">
-                    <h2 class="text-lg font-semibold text-gray-800 mb-3">Record Additional Check-in:</h2>
+                let html = `<div class="mt-4">
+                    <h2 class="text-lg font-semibold text-gray-800 mb-3 text-center">Record Additional Check-in:</h2>
                     <div class="grid grid-cols-2 gap-3">`;
                 
                 clubCheckInItems.forEach(item => { 
