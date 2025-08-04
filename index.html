@@ -80,6 +80,10 @@
                 display: none !important;
             }
         }
+        /* Class to hide elements during printing */
+        .hide-for-print {
+            display: none !important;
+        }
     </style>
 </head>
 <body class="bg-gray-100 flex flex-col items-center justify-center min-h-screen p-4">
@@ -342,12 +346,9 @@
             const printNameTag = (cardId) => {
                 const cardToPrint = document.getElementById(cardId);
                 if (cardToPrint) {
-                    // Add a class to the body to hide everything else
                     document.body.classList.add('printing');
-                    // Add a class to the specific card to mark it for printing
                     cardToPrint.classList.add('printable');
                     window.print();
-                    // Remove classes after print dialog is closed
                     document.body.classList.remove('printing');
                     cardToPrint.classList.remove('printable');
                 }
