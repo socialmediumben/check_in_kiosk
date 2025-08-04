@@ -1,6 +1,46 @@
-overflow: hidden;
-box-sizing: border-box;
-}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Check-In</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .stage { display: none; }
+        .active-stage { display: block; }
+        .spinner { border: 4px solid rgba(0, 0, 0, 0.1); width: 24px; height: 24px; border-radius: 50%; border-left-color: #0891b2; animation: spin 1s ease infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        /* Style for selected customer cards */
+        .customer-card.selected {
+            border-color: #0891b2; /* cyan-600 */
+            background-color: #ecfeff; /* cyan-50 */
+        }
+        /* Styles for printing */
+        @media print {
+            @page {
+                size: 3in 1.5in;
+                margin: 0;
+            }
+            body {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            /* Hide everything that isn't the printable area */
+            body.printing > *:not(.printable) {
+                display: none;
+            }
+            .printable {
+                display: block !important;
+                position: fixed;
+                left: 0;
+                top: 0;
+                width: 3in;
+                height: 1.5in;
+                overflow: hidden;
+                box-sizing: border-box;
+            }
             .printable .nametag-content {
                 display: flex;
                 flex-direction: column;
@@ -36,73 +76,392 @@ box-sizing: border-box;
                 right: 0.25rem !important;
                 padding: 2px !important;
             }
-.no-print {
-display: none !important;
-}
-@@ -211,16 +176,11 @@ <h1 class="text-4xl font-bold text-gray-800">Who is checking in?</h1>
-const fetchInitialData = async () => {
-showLoader('Activating kiosk...');
-try {
-                    console.log("Starting initial data fetch...");
-showLoader('Fetching Groups...');
-                    console.log("Attempting to fetch customer groups...");
-const groupsData = await apiFetch('/v2/customers/groups');
-                    console.log("Successfully fetched customer groups:", groupsData);
+            .no-print {
+                display: none !important;
+            }
+        }
+        /* Class to hide elements during printing */
+        .hide-for-print {
+            display: none !important;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex flex-col items-center justify-center min-h-screen p-4">
 
-showLoader('Fetching Segments...');
+    <!-- This container now only holds the initial stages -->
+    <div id="main-container" class="w-full max-w-xl mx-auto text-center bg-white p-8 rounded-2xl shadow-lg">
+        <!-- Stage for Admin to enter Square Access Token -->
+        <div id="stage-setup" class="stage active-stage">
+            <h1 class="text-3xl font-bold text-gray-800">Admin Setup</h1>
+            <p class="text-gray-500 mt-2 mb-6">Please enter the Square Access Token to activate this kiosk.</p>
+            <div class="flex items-center space-x-3">
+                <input type="password" id="square-token" class="flex-grow block w-full px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md" placeholder="Square Access Token">
+                <button id="save-token-btn" class="px-6 py-2 text-white bg-cyan-600 rounded-md hover:bg-cyan-700">Save</button>
+            </div>
+        </div>
+
+        <!-- Stage 1: Customer enters phone number -->
+        <div id="stage-1-search" class="stage">
+            <h1 class="text-4xl font-bold text-gray-800">Customer Check-In</h1>
+            <p class="text-gray-500 mt-2 mb-8">Please enter your phone number to begin.</p>
+            <div class="flex items-center space-x-3">
+                <input type="tel" id="search-value" class="flex-grow block w-full px-4 py-3 text-2xl text-center text-gray-700 bg-white border border-gray-300 rounded-md" placeholder="e.g., (415) 555-1234">
+                <button id="search-btn" class="px-8 py-3 text-white bg-cyan-600 rounded-md hover:bg-cyan-700 text-xl">Search</button>
+            </div>
+        </div>
+        
+        <!-- Stage 2: Shows customer results with multi-select -->
+        <div id="stage-2-results" class="stage">
+            <h1 class="text-4xl font-bold text-gray-800">Who is checking in?</h1>
+            <p class="text-gray-500 mt-2 mb-8">Please tap all names you'd like to check in.</p>
+            <div id="results-list" class="space-y-4"></div>
+            <div class="mt-8 flex justify-between items-center">
+                <button id="back-to-search-btn" class="px-6 py-2 text-gray-600 bg-white rounded-md hover:bg-gray-100 border">Back to Search</button>
+                <button id="check-in-selected-btn" class="px-8 py-3 text-white bg-cyan-600 rounded-md hover:bg-cyan-700 text-xl disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>Check In Selected</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Stage 3: Welcome message is now a separate container -->
+    <div id="stage-3-welcome" class="stage w-full max-w-5xl mx-auto">
+        <div id="welcome-cards-container" class="grid grid-cols-1 md:grid-cols-2 gap-8"></div>
+        <button id="start-over-btn" class="w-full px-8 py-4 text-white bg-cyan-600 rounded-md hover:bg-cyan-700 text-xl mt-8 no-print">Done</button>
+    </div>
+
+    <!-- Reusable loader and error components -->
+    <div id="loader" class="hidden items-center justify-center mt-6">
+        <div class="spinner"></div>
+        <p class="ml-4 text-gray-600">Please wait...</p>
+    </div>
+    <div id="error-box" class="hidden mt-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded-md"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- Element References ---
+            const stages = { setup: document.getElementById('stage-setup'), search: document.getElementById('stage-1-search'), results: document.getElementById('stage-2-results'), welcome: document.getElementById('stage-3-welcome') };
+            const mainContainer = document.getElementById('main-container');
+            const saveTokenBtn = document.getElementById('save-token-btn');
+            const searchBtn = document.getElementById('search-btn');
+            const resultsList = document.getElementById('results-list');
+            const welcomeCardsContainer = document.getElementById('welcome-cards-container');
+            const startOverBtn = document.getElementById('start-over-btn');
+            const backToSearchBtn = document.getElementById('back-to-search-btn');
+            const checkInSelectedBtn = document.getElementById('check-in-selected-btn');
+            const loader = document.getElementById('loader');
+            const errorBox = document.getElementById('error-box');
+
+            // --- State Variables ---
+            let squareAccessToken = null;
+            let allListsMap = new Map();
+            let clubCheckInItems = [];
+            let lockerRentalVariationIds = new Map();
+            let locationId = null;
+            let searchedCustomers = []; 
+            let selectedCustomers = [];
+
+            const API_PROXY_URL = 'https://square-checkin-backend.onrender.com';
+
+            // --- UI Helper Functions ---
+            const showLoader = (message) => { 
+                Object.values(stages).forEach(s => s.classList.remove('active-stage')); 
+                mainContainer.style.display = 'none'; 
+                loader.querySelector('p').textContent = message || 'Processing...'; 
+                loader.style.display = 'flex'; 
+                errorBox.style.display = 'none'; 
+            };
+            const hideLoader = () => { 
+                loader.style.display = 'none';
+            };
+            const showError = (message) => { 
+                errorBox.textContent = `Error: ${message}`; 
+                errorBox.style.display = 'block'; 
+            };
+            const hideError = () => errorBox.style.display = 'none';
+            
+            const showStage = (stageName) => { 
+                hideLoader(); 
+                hideError(); 
+                
+                mainContainer.style.display = 'none';
+                stages.welcome.style.display = 'none';
+
+                if (stages[stageName]) {
+                    if (stageName === 'welcome') {
+                        stages.welcome.style.display = 'block';
+                    } else {
+                        mainContainer.style.display = 'block';
+                        Object.values(stages).forEach(s => s.classList.remove('active-stage'));
+                        stages[stageName].classList.add('active-stage');
+                    }
+                }
+            };
+            
+            // --- API Fetch Function ---
+            const apiFetch = async (endpoint, options = {}) => {
+                const response = await fetch(`${API_PROXY_URL}/api${endpoint}`, {
+                    ...options,
+                    headers: { ...options.headers, 'x-square-access-token': squareAccessToken, 'Content-Type': 'application/json' },
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.errors?.[0]?.detail || data.error || 'An API error occurred.');
+                return data;
+            };
+
+            // --- Initial Data Fetching ---
+            const fetchInitialData = async () => {
+                showLoader('Activating kiosk...');
+                try {
+                    console.log("Starting initial data fetch...");
+                    showLoader('Fetching Groups...');
+                    console.log("Attempting to fetch customer groups...");
+                    const groupsData = await apiFetch('/v2/customers/groups');
+                    console.log("Successfully fetched customer groups:", groupsData);
+                    
+                    showLoader('Fetching Segments...');
                     console.log("Attempting to fetch customer segments...");
-const segmentsData = await apiFetch('/v2/customers/segments');
+                    const segmentsData = await apiFetch('/v2/customers/segments');
                     console.log("Successfully fetched customer segments:", segmentsData);
 
-allListsMap.clear();
-if (groupsData.groups) {
-@@ -229,7 +189,6 @@ <h1 class="text-4xl font-bold text-gray-800">Who is checking in?</h1>
-if (segmentsData.segments) {
-segmentsData.segments.forEach(segment => allListsMap.set(segment.id, segment.name));
-}
+                    allListsMap.clear();
+                    if (groupsData.groups) {
+                        groupsData.groups.forEach(group => allListsMap.set(group.id, group.name));
+                    }
+                    if (segmentsData.segments) {
+                        segmentsData.segments.forEach(segment => allListsMap.set(segment.id, segment.name));
+                    }
                     console.log("Combined groups and segments map:", Object.fromEntries(allListsMap));
+                    
+                    showLoader('Fetching Check-in Items...');
+                    await fetchClubCheckInItems();
 
-showLoader('Fetching Check-in Items...');
-await fetchClubCheckInItems();
-@@ -240,7 +199,6 @@ <h1 class="text-4xl font-bold text-gray-800">Who is checking in?</h1>
-showLoader('Fetching Location Info...');
-await fetchLocationId();
+                    showLoader('Fetching Locker Info...');
+                    await fetchLockerRentalInfo();
 
+                    showLoader('Fetching Location Info...');
+                    await fetchLocationId();
+                    
                     console.log("Initial data fetch complete.");
-showStage('search');
-} catch (error) {
-hideLoader();
-@@ -329,7 +287,7 @@ <h1 class="text-4xl font-bold text-gray-800">Who is checking in?</h1>
-const createWelcomeCard = async (customer) => {
-const card = document.createElement('div');
-card.className = 'bg-white p-4 rounded-2xl shadow-lg text-left';
+                    showStage('search');
+                } catch (error) {
+                    hideLoader();
+                    const errorMessage = `Initialization failed while ${loader.querySelector('p').textContent.toLowerCase()}. Error: ${error.message}`;
+                    console.error(errorMessage);
+                    showError(errorMessage);
+                }
+            };
+            
+            const fetchClubCheckInItems = async () => { try { const categoryData = await apiFetch('/v2/catalog/search', { method: 'POST', body: JSON.stringify({ object_types: ["CATEGORY"] }) }); const category = categoryData.objects?.find(obj => obj.category_data.name.toLowerCase() === 'kiosk check-ins'); if (!category) { console.warn('"Kiosk Check-Ins" category not found.'); return; } const itemsData = await apiFetch('/v2/catalog/search-catalog-items', { method: 'POST', body: JSON.stringify({ "category_ids": [category.id] }) }); if (itemsData.items) { clubCheckInItems = itemsData.items.map(item => ({ name: item.item_data.name, id: item.item_data.variations?.[0]?.id })).filter(item => item.id); } } catch (error) { console.error("Could not fetch club check-in items:", error); } };
+            const fetchLockerRentalInfo = async () => { try { const itemData = await apiFetch('/v2/catalog/search', { method: 'POST', body: JSON.stringify({ object_types: ["ITEM"], query: { text_query: { keywords: ["Locker Rentals"] } } }) }); const lockerItem = itemData.objects?.find(obj => obj.item_data.name.toLowerCase() === 'locker rentals'); if (lockerItem && lockerItem.item_data.variations) { lockerItem.item_data.variations.forEach(variation => { lockerRentalVariationIds.set(variation.id, variation.item_variation_data.name); }); } } catch (error) { console.warn("Could not fetch locker rental info. This feature will be disabled.", error); } };
+            const fetchLocationId = async () => { const data = await apiFetch('/v2/locations'); const activeLocation = data.locations?.find(loc => loc.status === 'ACTIVE'); if (!activeLocation) throw new Error('No active location found for this business.'); locationId = activeLocation.id; };
+
+            // --- Core Application Logic ---
+            const searchCustomers = async () => {
+                const searchValue = document.getElementById('search-value').value.trim();
+                if (!searchValue) return;
+                showLoader('Searching...');
+                let formattedPhone = searchValue.replace(/\D/g, '');
+                if (formattedPhone.length === 10) formattedPhone = `+1${formattedPhone}`;
+                else if (!searchValue.startsWith('+')) formattedPhone = `+${formattedPhone}`;
+                else formattedPhone = `+${formattedPhone.substring(1)}`;
+                try {
+                    const data = await apiFetch('/v2/customers/search', {
+                        method: 'POST',
+                        body: JSON.stringify({ query: { filter: { phone_number: { exact: formattedPhone } } } })
+                    });
+                    searchedCustomers = data.customers || [];
+                    displayCustomerResults();
+                    showStage('results');
+                } catch (error) {
+                    hideLoader();
+                    showError(`Search failed: ${error.message}`);
+                }
+            };
+            
+            const displayCustomerResults = () => {
+                resultsList.innerHTML = '';
+                selectedCustomers = []; 
+                checkInSelectedBtn.disabled = true;
+
+                if (searchedCustomers.length === 0) {
+                    resultsList.innerHTML = `
+                        <p class="text-gray-500 text-center p-4 text-xl">No customers found with that phone number.</p>
+                        <a href="https://www.socialmedium.space/waiver" target="_blank" class="block w-full mt-4 px-8 py-4 text-white bg-green-600 rounded-md hover:bg-green-700 text-xl">
+                            Sign the Waiver
+                        </a>
+                    `;
+                    return;
+                }
+
+                searchedCustomers.forEach(customer => {
+                    const card = document.createElement('div');
+                    card.className = 'customer-card w-full text-center p-4 bg-white border-2 border-gray-300 rounded-md hover:border-cyan-500 focus:border-cyan-500 transition-all text-2xl font-semibold cursor-pointer';
+                    card.textContent = `${customer.given_name || ''} ${customer.family_name || ''}`;
+                    card.dataset.customerId = customer.id;
+                    card.onclick = () => toggleCustomerSelection(customer, card);
+                    resultsList.appendChild(card);
+                });
+            };
+
+            const toggleCustomerSelection = (customer, cardElement) => {
+                const index = selectedCustomers.findIndex(c => c.id === customer.id);
+                if (index > -1) {
+                    selectedCustomers.splice(index, 1);
+                    cardElement.classList.remove('selected');
+                } else {
+                    selectedCustomers.push(customer);
+                    cardElement.classList.add('selected');
+                }
+                checkInSelectedBtn.disabled = selectedCustomers.length === 0;
+            };
+
+            const proceedWithSelection = async () => {
+                if (selectedCustomers.length === 0) return;
+                
+                welcomeCardsContainer.innerHTML = ''; // Clear previous cards
+                showStage('welcome');
+
+                for (const customer of selectedCustomers) {
+                    const card = await createWelcomeCard(customer);
+                    welcomeCardsContainer.appendChild(card);
+                }
+            };
+
+            const createWelcomeCard = async (customer) => {
+                const card = document.createElement('div');
+                card.className = 'bg-white p-4 rounded-2xl shadow-lg text-left';
                 card.id = `welcome-card-${customer.id}`; // Give each card a unique ID
-                card.id = `welcome-card-${customer.id}`;
 
-const nametagContent = getNameTagHTML(customer);
-const checkInButtons = getCheckInButtonsHTML(customer);
-@@ -381,16 +339,17 @@ <h1 class="text-4xl font-bold text-gray-800">Who is checking in?</h1>
-});
-const interestsString = [...customerInterests].join(', ');
+                const nametagContent = getNameTagHTML(customer);
+                const checkInButtons = getCheckInButtonsHTML(customer);
+                const printButton = `<div class="mt-4 no-print"><button class="print-btn w-full p-3 bg-blue-500 text-white rounded-md hover:bg-blue-600 font-semibold">Print Nametag</button></div>`;
 
-                // FIX: This entire block is now styled to be a 3x1.5 inch nametag directly.
-return `
+                card.innerHTML = nametagContent + checkInButtons + printButton;
+
+                card.querySelectorAll('.check-in-btn').forEach(button => {
+                    button.onclick = () => {
+                        const itemId = button.dataset.itemId;
+                        const customerId = button.dataset.customerId;
+                        createItemPurchase(itemId, customerId, button);
+                    };
+                });
+
+                card.querySelector('.print-btn').onclick = () => printNameTag(card.id);
+
+                return card;
+            };
+
+            const printNameTag = (cardId) => {
+                const cardToPrint = document.getElementById(cardId);
+                if (cardToPrint) {
+                    document.body.classList.add('printing');
+                    cardToPrint.classList.add('printable');
+                    window.print();
+                    document.body.classList.remove('printing');
+                    cardToPrint.classList.remove('printable');
+                }
+            };
+
+            const getNameTagHTML = (customer) => {
+                let membershipType = 'No Current Membership';
+                const segmentIds = customer.segment_ids || [];
+                segmentIds.forEach(id => {
+                    const name = allListsMap.get(id) || '';
+                    if (name.toLowerCase().startsWith('current ') && !name.startsWith('T:')) {
+                        membershipType = name.replace(/current /i, '').trim();
+                    }
+                });
+
+                const customerInterests = new Set();
+                const allIds = [...(customer.group_ids || []), ...(customer.segment_ids || [])];
+                allIds.forEach(id => {
+                    const name = allListsMap.get(id);
+                    if (name && name.startsWith('T:')) {
+                        customerInterests.add(name.replace('T:', '').trim());
+                    }
+                });
+                const interestsString = [...customerInterests].join(', ');
+
+                return `
                     <div class="nametag-content border-4 border-black rounded-xl p-4 relative">
                         <div class="nametag-stamp absolute top-4 right-4 border-2 border-black rounded-full h-20 w-20 flex items-center justify-center text-center text-xs font-semibold p-1">
-                    <div class="nametag-content border-2 border-black rounded-lg p-2 relative flex flex-col" style="width: 3in; height: 1.5in; box-sizing: border-box;">
-                        <div class="nametag-stamp absolute top-1 right-1 border border-black rounded-full h-12 w-12 flex items-center justify-center text-center" style="font-size: 0.4rem; line-height: 1;">
-                           ${membershipType}
-                       </div>
+                            ${membershipType}
+                        </div>
                         <div class="nametag-name text-8xl font-black">${customer.given_name || ''}</div>
                         <div class="nametag-pronouns mt-4 text-xl">Pronouns: _______________</div>
                         <div class="nametag-interests-container mt-6">
                             <div class="nametag-interests-title text-2xl font-bold">I'm Nerdy for...</div>
                             <div class="nametag-interests-list text-xl mt-1">${interestsString || 'N/A'}</div>
-                        <div class="nametag-name text-4xl font-black leading-none">${customer.given_name || ''}</div>
-                        <div class="nametag-pronouns text-xs mt-1">Pronouns: _______________</div>
-                        <div class="nametag-interests-container mt-auto">
-                            <div class="nametag-interests-title text-sm font-bold">I'm Nerdy for...</div>
-                            <div class="nametag-interests-list text-xs leading-tight">${interestsString || 'N/A'}</div>
-                       </div>
-                   </div>
-               `;
+                        </div>
+                    </div>
+                `;
+            };
+            
+            const getCheckInButtonsHTML = (customer) => { 
+                if (clubCheckInItems.length === 0) return ''; 
+                let html = `<div class="mt-4 no-print">
+                    <h2 class="text-lg font-semibold text-gray-800 mb-3 text-center">Record Additional Check-in:</h2>
+                    <div class="grid grid-cols-2 gap-3">`;
+                
+                clubCheckInItems.forEach(item => { 
+                    html += `<button class="check-in-btn p-3 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 font-semibold text-sm" data-item-id="${item.id}" data-customer-id="${customer.id}">
+                        ${item.name.replace(/check-in/i, '').trim()}
+                    </button>`;
+                }); 
+                
+                html += `</div></div>`;
+                return html;
+            };
+            
+            const createItemPurchase = async (itemId, customerId, buttonElement) => { 
+                buttonElement.disabled = true; 
+                buttonElement.innerHTML = '<div class="flex justify-center items-center"><div class="spinner"></div></div>'; 
+                
+                const orderPayload = { idempotency_key: crypto.randomUUID(), order: { location_id: locationId, customer_id: customerId, line_items: [{ catalog_object_id: itemId, quantity: '1' }] } }; 
+                
+                try {
+                    const orderData = await apiFetch('/v2/orders', { method: 'POST', body: JSON.stringify(orderPayload) });
+                    const payPayload = { idempotency_key: crypto.randomUUID(), payment_ids: [] }; 
+                    await apiFetch(`/v2/orders/${orderData.order.id}/pay`, { method: 'POST', body: JSON.stringify(payPayload) });
+                    buttonElement.className = 'p-3 bg-green-500 text-white rounded-md font-semibold text-sm'; 
+                    buttonElement.textContent = '✓ Recorded'; 
+                } catch (error) { 
+                    console.error("Check-in failed:", error); 
+                    buttonElement.className = 'p-3 bg-red-500 text-white rounded-md font-semibold text-sm'; 
+                    buttonElement.textContent = 'Failed'; 
+                    setTimeout(() => { 
+                        buttonElement.disabled = false; 
+                        buttonElement.className = 'p-3 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 font-semibold text-sm'; 
+                        buttonElement.textContent = 'Retry'; 
+                    }, 3000); 
+                } 
+            };
+
+            // --- Event Listeners ---
+            saveTokenBtn.addEventListener('click', () => {
+                const tokenInput = document.getElementById('square-token');
+                squareAccessToken = tokenInput.value.trim().replace(/[^\x20-\x7E]/g, '');
+                if (squareAccessToken) {
+                    fetchInitialData();
+                } else {
+                    showError('Please enter a valid Square Access Token.');
+                }
+            });
+
+            searchBtn.addEventListener('click', searchCustomers);
+            checkInSelectedBtn.addEventListener('click', proceedWithSelection);
+            
+            startOverBtn.addEventListener('click', () => {
+                document.getElementById('search-value').value = ''; 
+                selectedCustomers = []; 
+                showStage('search');
+            });
+
+            backToSearchBtn.addEventListener('click', () => { 
+                document.getElementById('search-value').value = ''; 
+                selectedCustomers = []; 
+                showStage('search'); 
+            });
+        });
+    </script>
+</body>
+</html>
