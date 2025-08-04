@@ -48,7 +48,6 @@
                 padding: 0.25rem !important;
                 height: 100%;
             }
-            /* FIX: Reduced font size for printing */
             .printable .nametag-name {
                 font-size: 28pt !important;
                 line-height: 1 !important;
@@ -212,11 +211,16 @@
             const fetchInitialData = async () => {
                 showLoader('Activating kiosk...');
                 try {
+                    console.log("Starting initial data fetch...");
                     showLoader('Fetching Groups...');
+                    console.log("Attempting to fetch customer groups...");
                     const groupsData = await apiFetch('/v2/customers/groups');
+                    console.log("Successfully fetched customer groups:", groupsData);
                     
                     showLoader('Fetching Segments...');
+                    console.log("Attempting to fetch customer segments...");
                     const segmentsData = await apiFetch('/v2/customers/segments');
+                    console.log("Successfully fetched customer segments:", segmentsData);
 
                     allListsMap.clear();
                     if (groupsData.groups) {
@@ -225,6 +229,7 @@
                     if (segmentsData.segments) {
                         segmentsData.segments.forEach(segment => allListsMap.set(segment.id, segment.name));
                     }
+                    console.log("Combined groups and segments map:", Object.fromEntries(allListsMap));
                     
                     showLoader('Fetching Check-in Items...');
                     await fetchClubCheckInItems();
@@ -235,6 +240,7 @@
                     showLoader('Fetching Location Info...');
                     await fetchLocationId();
                     
+                    console.log("Initial data fetch complete.");
                     showStage('search');
                 } catch (error) {
                     hideLoader();
@@ -433,7 +439,6 @@
             // --- Event Listeners ---
             saveTokenBtn.addEventListener('click', () => {
                 const tokenInput = document.getElementById('square-token');
-                // FIX: Sanitize the token to remove non-standard characters that can cause fetch errors.
                 squareAccessToken = tokenInput.value.trim().replace(/[^\x20-\x7E]/g, '');
                 if (squareAccessToken) {
                     fetchInitialData();
