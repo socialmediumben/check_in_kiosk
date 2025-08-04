@@ -160,12 +160,18 @@
 
             // --- Initial Data Fetching ---
             const fetchInitialData = async () => {
-                showLoader('Activating kiosk and fetching catalog...');
+                showLoader('Activating kiosk...');
                 try {
-                    const [groupsData, segmentsData] = await Promise.all([
-                        apiFetch('/v2/customers/groups'),
-                        apiFetch('/v2/customers/segments')
-                    ]);
+                    console.log("Starting initial data fetch...");
+                    showLoader('Fetching Groups...');
+                    console.log("Attempting to fetch customer groups...");
+                    const groupsData = await apiFetch('/v2/customers/groups');
+                    console.log("Successfully fetched customer groups:", groupsData);
+                    
+                    showLoader('Fetching Segments...');
+                    console.log("Attempting to fetch customer segments...");
+                    const segmentsData = await apiFetch('/v2/customers/segments');
+                    console.log("Successfully fetched customer segments:", segmentsData);
 
                     allListsMap.clear();
                     if (groupsData.groups) {
@@ -174,13 +180,24 @@
                     if (segmentsData.segments) {
                         segmentsData.segments.forEach(segment => allListsMap.set(segment.id, segment.name));
                     }
-
-                    await Promise.all([fetchClubCheckInItems(), fetchLockerRentalInfo(), fetchLocationId()]);
+                    console.log("Combined groups and segments map:", Object.fromEntries(allListsMap));
                     
+                    showLoader('Fetching Check-in Items...');
+                    await fetchClubCheckInItems();
+
+                    showLoader('Fetching Locker Info...');
+                    await fetchLockerRentalInfo();
+
+                    showLoader('Fetching Location Info...');
+                    await fetchLocationId();
+                    
+                    console.log("Initial data fetch complete.");
                     showStage('search');
                 } catch (error) {
                     hideLoader();
-                    showError(`Initialization failed: ${error.message}`);
+                    const errorMessage = `Initialization failed while ${loader.querySelector('p').textContent.toLowerCase()}. Error: ${error.message}`;
+                    console.error(errorMessage);
+                    showError(errorMessage);
                 }
             };
             
@@ -287,10 +304,8 @@
             const printNameTag = (cardId) => {
                 const cardToPrint = document.getElementById(cardId);
                 if (cardToPrint) {
-                    // Add a class to the card to mark it for printing
                     cardToPrint.classList.add('printable');
                     window.print();
-                    // Remove the class after the print dialog is closed
                     cardToPrint.classList.remove('printable');
                 }
             };
@@ -373,9 +388,13 @@
             // --- Event Listeners ---
             saveTokenBtn.addEventListener('click', () => {
                 const tokenInput = document.getElementById('square-token');
-                squareAccessToken = tokenInput.value.trim();
-                if (squareAccessToken) fetchInitialData();
-                else showError('Please enter a valid Square Access Token.');
+                // FIX: Sanitize the token to remove non-standard characters that can cause fetch errors.
+                squareAccessToken = tokenInput.value.trim().replace(/[^\x20-\x7E]/g, '');
+                if (squareAccessToken) {
+                    fetchInitialData();
+                } else {
+                    showError('Please enter a valid Square Access Token.');
+                }
             });
 
             searchBtn.addEventListener('click', searchCustomers);
