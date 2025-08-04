@@ -27,13 +27,12 @@
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
             }
-            body * {
-                visibility: hidden;
-            }
-            .printable, .printable * {
-                visibility: visible;
+            /* Hide everything by default when printing */
+            body.printing > *:not(.printable) {
+                display: none;
             }
             .printable {
+                display: block !important;
                 position: fixed;
                 left: 0;
                 top: 0;
@@ -43,6 +42,8 @@
                 box-sizing: border-box;
             }
             .printable .nametag-content {
+                display: flex;
+                flex-direction: column;
                 border-width: 2px !important;
                 padding: 0.25rem !important;
                 height: 100%;
@@ -55,9 +56,11 @@
                 font-size: 9pt !important;
                 margin-top: 0.1rem !important;
             }
+            .printable .nametag-interests-container {
+                 margin-top: auto; /* Pushes this to the bottom */
+            }
             .printable .nametag-interests-title {
                 font-size: 10pt !important;
-                margin-top: 0.25rem !important;
             }
             .printable .nametag-interests-list {
                 font-size: 8pt !important;
@@ -74,7 +77,7 @@
                 padding: 2px !important;
             }
             .no-print {
-                display: none;
+                display: none !important;
             }
         }
     </style>
@@ -204,16 +207,11 @@
             const fetchInitialData = async () => {
                 showLoader('Activating kiosk...');
                 try {
-                    console.log("Starting initial data fetch...");
                     showLoader('Fetching Groups...');
-                    console.log("Attempting to fetch customer groups...");
                     const groupsData = await apiFetch('/v2/customers/groups');
-                    console.log("Successfully fetched customer groups:", groupsData);
                     
                     showLoader('Fetching Segments...');
-                    console.log("Attempting to fetch customer segments...");
                     const segmentsData = await apiFetch('/v2/customers/segments');
-                    console.log("Successfully fetched customer segments:", segmentsData);
 
                     allListsMap.clear();
                     if (groupsData.groups) {
@@ -222,7 +220,6 @@
                     if (segmentsData.segments) {
                         segmentsData.segments.forEach(segment => allListsMap.set(segment.id, segment.name));
                     }
-                    console.log("Combined groups and segments map:", Object.fromEntries(allListsMap));
                     
                     showLoader('Fetching Check-in Items...');
                     await fetchClubCheckInItems();
@@ -233,7 +230,6 @@
                     showLoader('Fetching Location Info...');
                     await fetchLocationId();
                     
-                    console.log("Initial data fetch complete.");
                     showStage('search');
                 } catch (error) {
                     hideLoader();
@@ -346,8 +342,10 @@
             const printNameTag = (cardId) => {
                 const cardToPrint = document.getElementById(cardId);
                 if (cardToPrint) {
+                    document.body.classList.add('printing');
                     cardToPrint.classList.add('printable');
                     window.print();
+                    document.body.classList.remove('printing');
                     cardToPrint.classList.remove('printable');
                 }
             };
@@ -379,7 +377,7 @@
                         </div>
                         <div class="nametag-name text-8xl font-black">${customer.given_name || ''}</div>
                         <div class="nametag-pronouns mt-4 text-xl">Pronouns: _______________</div>
-                        <div class="mt-6">
+                        <div class="nametag-interests-container mt-6">
                             <div class="nametag-interests-title text-2xl font-bold">I'm Nerdy for...</div>
                             <div class="nametag-interests-list text-xl mt-1">${interestsString || 'N/A'}</div>
                         </div>
