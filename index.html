@@ -17,38 +17,6 @@
             border-color: #0891b2; /* cyan-600 */
             background-color: #ecfeff; /* cyan-50 */
         }
-        /* Styles for printing */
-        @media print {
-            @page {
-                size: 3in 1.5in;
-                margin: 0;
-            }
-            body {
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
-            }
-            /* Hide everything that isn't the printable area */
-            body.printing > *:not(.printable) {
-                display: none;
-            }
-            .printable {
-                display: block !important;
-                position: fixed;
-                left: 0;
-                top: 0;
-                width: 3in;
-                height: 1.5in;
-                overflow: hidden;
-                box-sizing: border-box;
-            }
-            .no-print {
-                display: none !important;
-            }
-        }
-        /* Class to hide elements during printing */
-        .hide-for-print {
-            display: none !important;
-        }
     </style>
 </head>
 <body class="bg-gray-100 flex flex-col items-center justify-center min-h-screen p-4">
@@ -90,7 +58,7 @@
     <!-- Stage 3: Welcome message is now a separate container -->
     <div id="stage-3-welcome" class="stage w-full max-w-5xl mx-auto">
         <div id="welcome-cards-container" class="grid grid-cols-1 md:grid-cols-2 gap-8"></div>
-        <button id="start-over-btn" class="w-full px-8 py-4 text-white bg-cyan-600 rounded-md hover:bg-cyan-700 text-xl mt-8 no-print">Done</button>
+        <button id="start-over-btn" class="w-full px-8 py-4 text-white bg-cyan-600 rounded-md hover:bg-cyan-700 text-xl mt-8">Done</button>
     </div>
 
     <!-- Reusable loader and error components -->
@@ -291,7 +259,7 @@
 
                 const nametagContent = getNameTagHTML(customer);
                 const checkInButtons = getCheckInButtonsHTML(customer);
-                const printButton = `<div class="mt-4 no-print"><button class="print-btn w-full p-3 bg-blue-500 text-white rounded-md hover:bg-blue-600 font-semibold">Print Nametag</button></div>`;
+                const printButton = `<div class="mt-4"><button class="print-btn w-full p-3 bg-blue-500 text-white rounded-md hover:bg-blue-600 font-semibold">Print Nametag</button></div>`;
 
                 card.innerHTML = nametagContent + checkInButtons + printButton;
 
@@ -310,13 +278,38 @@
 
             const printNameTag = (cardId) => {
                 const cardToPrint = document.getElementById(cardId);
-                if (cardToPrint) {
-                    document.body.classList.add('printing');
-                    cardToPrint.classList.add('printable');
-                    window.print();
-                    document.body.classList.remove('printing');
-                    cardToPrint.classList.remove('printable');
-                }
+                const nametagHTML = cardToPrint.querySelector('.nametag-content').outerHTML;
+                
+                const printWindow = window.open('', '_blank');
+                printWindow.document.write(`
+                    <html>
+                        <head>
+                            <title>Print Nametag</title>
+                            <script src="https://cdn.tailwindcss.com"></script>
+                            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+                            <style>
+                                @page { size: 3in 1.5in; margin: 0; }
+                                body { font-family: 'Inter', sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                                .nametag-content { display: flex; flex-direction: column; border-width: 2px !important; padding: 0.25rem !important; height: 100%; box-sizing: border-box; }
+                                .nametag-name { font-size: 28pt !important; line-height: 1 !important; }
+                                .nametag-pronouns { font-size: 9pt !important; margin-top: 0.1rem !important; }
+                                .nametag-interests-container { margin-top: auto; }
+                                .nametag-interests-title { font-size: 10pt !important; }
+                                .nametag-interests-list { font-size: 8pt !important; line-height: 1.1 !important; margin-top: 0 !important; }
+                                .nametag-stamp { height: 3rem !important; width: 3rem !important; font-size: 0.45rem !important; border-width: 1px !important; top: 0.25rem !important; right: 0.25rem !important; padding: 2px !important; }
+                            </style>
+                        </head>
+                        <body>
+                            ${nametagHTML}
+                        </body>
+                    </html>
+                `);
+                printWindow.document.close();
+                printWindow.focus();
+                setTimeout(() => {
+                    printWindow.print();
+                    printWindow.close();
+                }, 250);
             };
 
             const getNameTagHTML = (customer) => {
@@ -339,7 +332,6 @@
                 });
                 const interestsString = [...customerInterests].join(', ');
 
-                // FIX: This entire block is now styled to be a 3x1.5 inch nametag directly.
                 return `
                     <div class="nametag-content border-2 border-black rounded-lg p-2 relative flex flex-col" style="width: 3in; height: 1.5in; box-sizing: border-box;">
                         <div class="nametag-stamp absolute top-1 right-1 border border-black rounded-full h-12 w-12 flex items-center justify-center text-center" style="font-size: 0.4rem; line-height: 1;">
@@ -357,7 +349,7 @@
             
             const getCheckInButtonsHTML = (customer) => { 
                 if (clubCheckInItems.length === 0) return ''; 
-                let html = `<div class="mt-4 no-print">
+                let html = `<div class="mt-4">
                     <h2 class="text-lg font-semibold text-gray-800 mb-3 text-center">Record Additional Check-in:</h2>
                     <div class="grid grid-cols-2 gap-3">`;
                 
