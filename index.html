@@ -109,6 +109,8 @@
             let locationId = null;
             let searchedCustomers = []; 
             let selectedCustomers = [];
+            // Directly set the key for the "B: Pronouns" custom attribute.
+            const pronounsCustomAttributeKey = "square:1af52fc0-c773-45be-8457-204a676fb763"; 
 
             const API_PROXY_URL = 'https://square-checkin-backend.onrender.com';
 
@@ -164,23 +166,14 @@
                 try {
                     console.log("Starting initial data fetch...");
                     showLoader('Fetching Groups...');
-                    console.log("Attempting to fetch customer groups...");
                     const groupsData = await apiFetch('/v2/customers/groups');
-                    console.log("Successfully fetched customer groups:", groupsData);
                     
                     showLoader('Fetching Segments...');
-                    console.log("Attempting to fetch customer segments...");
                     const segmentsData = await apiFetch('/v2/customers/segments');
-                    console.log("Successfully fetched customer segments:", segmentsData);
 
                     allListsMap.clear();
-                    if (groupsData.groups) {
-                        groupsData.groups.forEach(group => allListsMap.set(group.id, group.name));
-                    }
-                    if (segmentsData.segments) {
-                        segmentsData.segments.forEach(segment => allListsMap.set(segment.id, segment.name));
-                    }
-                    console.log("Combined groups and segments map:", Object.fromEntries(allListsMap));
+                    if (groupsData.groups) groupsData.groups.forEach(group => allListsMap.set(group.id, group.name));
+                    if (segmentsData.segments) segmentsData.segments.forEach(segment => allListsMap.set(segment.id, segment.name));
                     
                     showLoader('Fetching Check-in Items...');
                     await fetchClubCheckInItems();
@@ -200,7 +193,7 @@
                     showError(errorMessage);
                 }
             };
-            
+
             const fetchClubCheckInItems = async () => { try { const categoryData = await apiFetch('/v2/catalog/search', { method: 'POST', body: JSON.stringify({ object_types: ["CATEGORY"] }) }); const category = categoryData.objects?.find(obj => obj.category_data.name.toLowerCase() === 'kiosk check-ins'); if (!category) { console.warn('"Kiosk Check-Ins" category not found.'); return; } const itemsData = await apiFetch('/v2/catalog/search-catalog-items', { method: 'POST', body: JSON.stringify({ "category_ids": [category.id] }) }); if (itemsData.items) { clubCheckInItems = itemsData.items.map(item => ({ name: item.item_data.name, id: item.item_data.variations?.[0]?.id })).filter(item => item.id); } } catch (error) { console.error("Could not fetch club check-in items:", error); } };
             const fetchLockerRentalInfo = async () => { try { const itemData = await apiFetch('/v2/catalog/search', { method: 'POST', body: JSON.stringify({ object_types: ["ITEM"], query: { text_query: { keywords: ["Locker Rentals"] } } }) }); const lockerItem = itemData.objects?.find(obj => obj.item_data.name.toLowerCase() === 'locker rentals'); if (lockerItem && lockerItem.item_data.variations) { lockerItem.item_data.variations.forEach(variation => { lockerRentalVariationIds.set(variation.id, variation.item_variation_data.name); }); } } catch (error) { console.warn("Could not fetch locker rental info. This feature will be disabled.", error); } };
             const fetchLocationId = async () => { const data = await apiFetch('/v2/locations'); const activeLocation = data.locations?.find(loc => loc.status === 'ACTIVE'); if (!activeLocation) throw new Error('No active location found for this business.'); locationId = activeLocation.id; };
@@ -234,12 +227,7 @@
                 checkInSelectedBtn.disabled = true;
 
                 if (searchedCustomers.length === 0) {
-                    resultsList.innerHTML = `
-                        <p class="text-gray-500 text-center p-4 text-xl">No customers found with that phone number.</p>
-                        <a href="https://www.socialmedium.space/waiver" target="_blank" class="block w-full mt-4 px-8 py-4 text-white bg-green-600 rounded-md hover:bg-green-700 text-xl">
-                            Sign the Waiver
-                        </a>
-                    `;
+                    resultsList.innerHTML = `<p class="text-gray-500 text-center p-4 text-xl">No customers found with that phone number.</p><a href="https://www.socialmedium.space/waiver" target="_blank" class="block w-full mt-4 px-8 py-4 text-white bg-green-600 rounded-md hover:bg-green-700 text-xl">Sign the Waiver</a>`;
                     return;
                 }
 
@@ -268,7 +256,7 @@
             const proceedWithSelection = async () => {
                 if (selectedCustomers.length === 0) return;
                 
-                welcomeCardsContainer.innerHTML = ''; // Clear previous cards
+                welcomeCardsContainer.innerHTML = '';
                 showStage('welcome');
 
                 for (const customer of selectedCustomers) {
@@ -280,24 +268,39 @@
             const createWelcomeCard = async (customer) => {
                 const card = document.createElement('div');
                 card.className = 'bg-white p-4 rounded-2xl shadow-lg text-left';
-                card.id = `welcome-card-${customer.id}`; // Give each card a unique ID
+                card.id = `welcome-card-${customer.id}`;
+                card.innerHTML = `<div class="flex justify-center items-center p-8"><div class="spinner"></div></div>`;
 
-                const nametagContent = getNameTagHTML(customer);
-                const checkInButtons = getCheckInButtonsHTML(customer);
-                const printButton = `<div class="mt-4 no-print"><button class="print-btn w-full p-3 bg-blue-500 text-white rounded-md hover:bg-blue-600 font-semibold">Print Nametag</button></div>`;
+                try {
+                    // Fetch the base customer profile
+                    const fullCustomerProfileResponse = await apiFetch(`/v2/customers/${customer.id}`);
+                    const fullCustomer = fullCustomerProfileResponse.customer;
 
-                card.innerHTML = nametagContent + checkInButtons + printButton;
+                    // Fetch the customer's custom attributes
+                    const customAttributesResponse = await apiFetch(`/v2/customers/${customer.id}/custom-attributes`);
+                    if (customAttributesResponse.custom_attributes) {
+                        // Convert array of attributes to a map-like object for easier lookup
+                        fullCustomer.custom_attributes = customAttributesResponse.custom_attributes.reduce((acc, attr) => {
+                            acc[attr.key] = attr;
+                            return acc;
+                        }, {});
+                    }
 
-                card.querySelectorAll('.check-in-btn').forEach(button => {
-                    button.onclick = () => {
-                        const itemId = button.dataset.itemId;
-                        const customerId = button.dataset.customerId;
-                        createItemPurchase(itemId, customerId, button);
-                    };
-                });
 
-                card.querySelector('.print-btn').onclick = () => printNameTag(card.id);
+                    const nametagContent = getNameTagHTML(fullCustomer);
+                    const checkInButtons = getCheckInButtonsHTML(fullCustomer);
+                    const printButton = `<div class="mt-4 no-print"><button class="print-btn w-full p-3 bg-blue-500 text-white rounded-md hover:bg-blue-600 font-semibold">Print Nametag</button></div>`;
+                    
+                    card.innerHTML = nametagContent + checkInButtons + printButton;
 
+                    card.querySelectorAll('.check-in-btn').forEach(button => {
+                        button.onclick = () => createItemPurchase(button.dataset.itemId, button.dataset.customerId, button);
+                    });
+                    card.querySelector('.print-btn').onclick = () => printNameTag(card.id);
+                } catch (error) {
+                    console.error(`Failed to fetch full details for customer ${customer.id}:`, error);
+                    card.innerHTML = `<div class="p-4 text-red-600">Could not load details for ${customer.given_name || 'customer'}.</div>`;
+                }
                 return card;
             };
 
@@ -330,13 +333,19 @@
                 });
                 const interestsString = [...customerInterests].join(', ');
 
+                let pronouns = '_______________';
+                // Check if the key and the attributes object exist
+                if (pronounsCustomAttributeKey && customer.custom_attributes && customer.custom_attributes[pronounsCustomAttributeKey]) {
+                    pronouns = customer.custom_attributes[pronounsCustomAttributeKey].value || '_______________';
+                }
+                
                 return `
                     <div class="border-4 border-black rounded-xl p-4 relative">
                         <div class="absolute top-4 right-4 border-2 border-black rounded-full h-20 w-20 flex items-center justify-center text-center text-xs font-semibold p-1">
                             ${membershipType}
                         </div>
                         <div class="text-8xl font-black">${customer.given_name || ''}</div>
-                        <div class="mt-4 text-xl">Pronouns: _______________</div>
+                        <div class="mt-4 text-xl">Pronouns: ${pronouns}</div>
                         <div class="mt-6">
                             <div class="text-2xl font-bold">I'm Nerdy for...</div>
                             <div class="text-xl mt-1">${interestsString || 'N/A'}</div>
@@ -347,16 +356,10 @@
             
             const getCheckInButtonsHTML = (customer) => { 
                 if (clubCheckInItems.length === 0) return ''; 
-                let html = `<div class="mt-4 no-print">
-                    <h2 class="text-lg font-semibold text-gray-800 mb-3 text-center">Record Additional Check-in:</h2>
-                    <div class="grid grid-cols-2 gap-3">`;
-                
+                let html = `<div class="mt-4 no-print"><h2 class="text-lg font-semibold text-gray-800 mb-3 text-center">Record Additional Check-in:</h2><div class="grid grid-cols-2 gap-3">`;
                 clubCheckInItems.forEach(item => { 
-                    html += `<button class="check-in-btn p-3 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 font-semibold text-sm" data-item-id="${item.id}" data-customer-id="${customer.id}">
-                        ${item.name.replace(/check-in/i, '').trim()}
-                    </button>`;
+                    html += `<button class="check-in-btn p-3 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 font-semibold text-sm" data-item-id="${item.id}" data-customer-id="${customer.id}">${item.name.replace(/check-in/i, '').trim()}</button>`;
                 }); 
-                
                 html += `</div></div>`;
                 return html;
             };
@@ -364,9 +367,7 @@
             const createItemPurchase = async (itemId, customerId, buttonElement) => { 
                 buttonElement.disabled = true; 
                 buttonElement.innerHTML = '<div class="flex justify-center items-center"><div class="spinner"></div></div>'; 
-                
                 const orderPayload = { idempotency_key: crypto.randomUUID(), order: { location_id: locationId, customer_id: customerId, line_items: [{ catalog_object_id: itemId, quantity: '1' }] } }; 
-                
                 try {
                     const orderData = await apiFetch('/v2/orders', { method: 'POST', body: JSON.stringify(orderPayload) });
                     const payPayload = { idempotency_key: crypto.randomUUID(), payment_ids: [] }; 
@@ -388,7 +389,6 @@
             // --- Event Listeners ---
             saveTokenBtn.addEventListener('click', () => {
                 const tokenInput = document.getElementById('square-token');
-                // FIX: Sanitize the token to remove non-standard characters that can cause fetch errors.
                 squareAccessToken = tokenInput.value.trim().replace(/[^\x20-\x7E]/g, '');
                 if (squareAccessToken) {
                     fetchInitialData();
