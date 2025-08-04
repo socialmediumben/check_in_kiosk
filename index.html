@@ -27,7 +27,12 @@
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
             }
+            /* Hide everything that isn't the printable area */
+            body.printing > *:not(.printable) {
+                display: none;
+            }
             .printable {
+                display: block !important;
                 position: fixed;
                 left: 0;
                 top: 0;
@@ -74,10 +79,6 @@
             .no-print {
                 display: none !important;
             }
-        }
-        /* Class to hide elements during printing */
-        .hide-for-print {
-            display: none !important;
         }
     </style>
 </head>
@@ -341,22 +342,14 @@
             const printNameTag = (cardId) => {
                 const cardToPrint = document.getElementById(cardId);
                 if (cardToPrint) {
-                    // Temporarily hide all other cards
-                    const allCards = welcomeCardsContainer.querySelectorAll(':scope > div');
-                    allCards.forEach(card => {
-                        if (card.id !== cardId) {
-                            card.classList.add('hide-for-print');
-                        }
-                    });
-
+                    // Add a class to the body to hide everything else
+                    document.body.classList.add('printing');
+                    // Add a class to the specific card to mark it for printing
                     cardToPrint.classList.add('printable');
                     window.print();
+                    // Remove classes after print dialog is closed
+                    document.body.classList.remove('printing');
                     cardToPrint.classList.remove('printable');
-
-                    // Show all cards again
-                    allCards.forEach(card => {
-                        card.classList.remove('hide-for-print');
-                    });
                 }
             };
 
