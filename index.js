@@ -1,4 +1,4 @@
-// index.js - The backend server for Render
+// index.js - The corrected backend server for Render
 
 const express = require('express');
 const cors = require('cors');
@@ -12,7 +12,7 @@ app.use(express.json()); // Allow the server to read JSON bodies
 
 // This single route will catch all requests and forward them to Square
 app.all('/api/*', async (req, res) => {
-  const squareApiUrl = req.path.replace('/api', ''); // Get the path (e.g., /v2/customers/search)
+  const squareApiPath = req.path.replace('/api', ''); // Get the path (e.g., /v2/customers/search)
   const accessToken = req.headers['x-square-access-token'];
 
   if (!accessToken) {
@@ -20,16 +20,18 @@ app.all('/api/*', async (req, res) => {
   }
 
   try {
-    const squareResponse = await fetch(`https://connect.squareup.com${squareApiUrl}`, {
+    // FIX: Construct a URL object to correctly handle and forward query parameters (like the cursor for pagination).
+    const squareApiUrl = new URL(`https://connect.squareup.com${squareApiPath}`);
+    squareApiUrl.search = new URLSearchParams(req.query).toString();
+
+    const squareResponse = await fetch(squareApiUrl.toString(), {
       method: req.method,
       headers: {
         'Authorization': `Bearer ${accessToken}`,
-        // FIX: Updated the Square API version to a modern one that supports
-        // returning custom attributes on customer profiles.
         'Square-Version': '2024-07-22',
         'Content-Type': 'application/json',
       },
-      body: req.method !== 'GET' ? JSON.stringify(req.body) : undefined,
+      body: req.method !== 'GET' && req.body ? JSON.stringify(req.body) : undefined,
     });
 
     const data = await squareResponse.json();
