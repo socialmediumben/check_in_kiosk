@@ -41,41 +41,6 @@
                 overflow: hidden;
                 box-sizing: border-box;
             }
-            .printable .nametag-content {
-                display: flex;
-                flex-direction: column;
-                border-width: 2px !important;
-                padding: 0.25rem !important;
-                height: 100%;
-            }
-            .printable .nametag-name {
-                font-size: 28pt !important;
-                line-height: 1 !important;
-            }
-            .printable .nametag-pronouns {
-                font-size: 9pt !important;
-                margin-top: 0.1rem !important;
-            }
-            .printable .nametag-interests-container {
-                 margin-top: auto; /* Pushes this to the bottom */
-            }
-            .printable .nametag-interests-title {
-                font-size: 10pt !important;
-            }
-            .printable .nametag-interests-list {
-                font-size: 8pt !important;
-                line-height: 1.1 !important;
-                margin-top: 0 !important;
-            }
-            .printable .nametag-stamp {
-                height: 3rem !important;
-                width: 3rem !important;
-                font-size: 0.45rem !important;
-                border-width: 1px !important;
-                top: 0.25rem !important;
-                right: 0.25rem !important;
-                padding: 2px !important;
-            }
             .no-print {
                 display: none !important;
             }
@@ -211,16 +176,11 @@
             const fetchInitialData = async () => {
                 showLoader('Activating kiosk...');
                 try {
-                    console.log("Starting initial data fetch...");
                     showLoader('Fetching Groups...');
-                    console.log("Attempting to fetch customer groups...");
                     const groupsData = await apiFetch('/v2/customers/groups');
-                    console.log("Successfully fetched customer groups:", groupsData);
                     
                     showLoader('Fetching Segments...');
-                    console.log("Attempting to fetch customer segments...");
                     const segmentsData = await apiFetch('/v2/customers/segments');
-                    console.log("Successfully fetched customer segments:", segmentsData);
 
                     allListsMap.clear();
                     if (groupsData.groups) {
@@ -229,7 +189,6 @@
                     if (segmentsData.segments) {
                         segmentsData.segments.forEach(segment => allListsMap.set(segment.id, segment.name));
                     }
-                    console.log("Combined groups and segments map:", Object.fromEntries(allListsMap));
                     
                     showLoader('Fetching Check-in Items...');
                     await fetchClubCheckInItems();
@@ -240,7 +199,6 @@
                     showLoader('Fetching Location Info...');
                     await fetchLocationId();
                     
-                    console.log("Initial data fetch complete.");
                     showStage('search');
                 } catch (error) {
                     hideLoader();
@@ -329,7 +287,7 @@
             const createWelcomeCard = async (customer) => {
                 const card = document.createElement('div');
                 card.className = 'bg-white p-4 rounded-2xl shadow-lg text-left';
-                card.id = `welcome-card-${customer.id}`; // Give each card a unique ID
+                card.id = `welcome-card-${customer.id}`;
 
                 const nametagContent = getNameTagHTML(customer);
                 const checkInButtons = getCheckInButtonsHTML(customer);
@@ -381,16 +339,17 @@
                 });
                 const interestsString = [...customerInterests].join(', ');
 
+                // FIX: This entire block is now styled to be a 3x1.5 inch nametag directly.
                 return `
-                    <div class="nametag-content border-4 border-black rounded-xl p-4 relative">
-                        <div class="nametag-stamp absolute top-4 right-4 border-2 border-black rounded-full h-20 w-20 flex items-center justify-center text-center text-xs font-semibold p-1">
+                    <div class="nametag-content border-2 border-black rounded-lg p-2 relative flex flex-col" style="width: 3in; height: 1.5in; box-sizing: border-box;">
+                        <div class="nametag-stamp absolute top-1 right-1 border border-black rounded-full h-12 w-12 flex items-center justify-center text-center" style="font-size: 0.4rem; line-height: 1;">
                             ${membershipType}
                         </div>
-                        <div class="nametag-name text-8xl font-black">${customer.given_name || ''}</div>
-                        <div class="nametag-pronouns mt-4 text-xl">Pronouns: _______________</div>
-                        <div class="nametag-interests-container mt-6">
-                            <div class="nametag-interests-title text-2xl font-bold">I'm Nerdy for...</div>
-                            <div class="nametag-interests-list text-xl mt-1">${interestsString || 'N/A'}</div>
+                        <div class="nametag-name text-4xl font-black leading-none">${customer.given_name || ''}</div>
+                        <div class="nametag-pronouns text-xs mt-1">Pronouns: _______________</div>
+                        <div class="nametag-interests-container mt-auto">
+                            <div class="nametag-interests-title text-sm font-bold">I'm Nerdy for...</div>
+                            <div class="nametag-interests-list text-xs leading-tight">${interestsString || 'N/A'}</div>
                         </div>
                     </div>
                 `;
