@@ -106,6 +106,7 @@
             // Directly set the keys for the custom attributes.
             const pronounsCustomAttributeKey = "square:1af52fc0-c773-45be-8457-204a676fb763"; 
             const newWaiverCustomAttributeKey = "square:a606d2c0-3a08-4966-ba66-bd68cd24d7fe";
+            const customInterestsAttributeKey = "square:44d0b181-7c7b-4c27-97ee-14154777ee7d";
 
             const API_PROXY_URL = 'https://square-checkin-backend.onrender.com';
 
@@ -423,6 +424,17 @@
                         customerInterests.add(name.replace('T:', '').trim());
                     }
                 });
+                
+                // Add custom interests from the text field
+                if (customInterestsAttributeKey && customer.custom_attributes && customer.custom_attributes[customInterestsAttributeKey]) {
+                    const customValue = customer.custom_attributes[customInterestsAttributeKey].value;
+                    if (customValue && customValue.trim() !== '') {
+                        // Split by comma and add each interest to the set
+                        const customInterestsArray = customValue.split(',').map(interest => interest.trim()).filter(interest => interest);
+                        customInterestsArray.forEach(interest => customerInterests.add(interest));
+                    }
+                }
+
                 const interestsString = [...customerInterests].join(', ');
 
                 let pronouns = '_______________';
