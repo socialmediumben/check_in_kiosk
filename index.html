@@ -41,16 +41,6 @@
 
     <!-- This container now only holds the initial stages -->
     <div id="main-container" class="w-full max-w-xl mx-auto text-center bg-white p-8 rounded-2xl shadow-lg">
-        <!-- Stage for Admin to enter Square Access Token -->
-        <div id="stage-setup" class="stage active-stage">
-            <h1 class="text-3xl font-bold text-gray-800">Admin Setup</h1>
-            <p class="text-gray-500 mt-2 mb-6">Please enter the Square Access Token to activate this kiosk.</p>
-            <div class="flex items-center space-x-3">
-                <input type="password" id="square-token" class="flex-grow block w-full px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md" placeholder="Square Access Token">
-                <button id="save-token-btn" class="px-6 py-2 text-white bg-cyan-600 rounded-md hover:bg-cyan-700">Save</button>
-            </div>
-        </div>
-
         <!-- Stage 1: Customer enters phone number -->
         <div id="stage-1-search" class="stage">
             <h1 class="text-4xl font-bold text-gray-800">Customer Check-In</h1>
@@ -95,9 +85,8 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             // --- Element References ---
-            const stages = { setup: document.getElementById('stage-setup'), search: document.getElementById('stage-1-search'), results: document.getElementById('stage-2-results'), welcome: document.getElementById('stage-3-welcome') };
+            const stages = { search: document.getElementById('stage-1-search'), results: document.getElementById('stage-2-results'), welcome: document.getElementById('stage-3-welcome') };
             const mainContainer = document.getElementById('main-container');
-            const saveTokenBtn = document.getElementById('save-token-btn');
             const searchBtn = document.getElementById('search-btn');
             const resultsList = document.getElementById('results-list');
             const welcomeCardsContainer = document.getElementById('welcome-cards-container');
@@ -108,7 +97,6 @@
             const errorBox = document.getElementById('error-box');
 
             // --- State Variables ---
-            let squareAccessToken = null;
             let allListsMap = new Map();
             let clubCheckInItems = [];
             let lockerRentalVariationIds = new Map();
@@ -157,9 +145,10 @@
             
             // --- API Fetch Function ---
             const apiFetch = async (endpoint, options = {}) => {
+                // The access token is no longer sent from the client.
                 const response = await fetch(`${API_PROXY_URL}/api${endpoint}`, {
                     ...options,
-                    headers: { ...options.headers, 'x-square-access-token': squareAccessToken, 'Content-Type': 'application/json' },
+                    headers: { ...options.headers, 'Content-Type': 'application/json' },
                 });
                 const data = await response.json();
                 if (!response.ok) throw new Error(data.errors?.[0]?.detail || data.error || 'An API error occurred.');
@@ -393,16 +382,6 @@
             };
 
             // --- Event Listeners ---
-            saveTokenBtn.addEventListener('click', () => {
-                const tokenInput = document.getElementById('square-token');
-                squareAccessToken = tokenInput.value.trim().replace(/[^\x20-\x7E]/g, '');
-                if (squareAccessToken) {
-                    fetchInitialData();
-                } else {
-                    showError('Please enter a valid Square Access Token.');
-                }
-            });
-
             searchBtn.addEventListener('click', searchCustomers);
             checkInSelectedBtn.addEventListener('click', proceedWithSelection);
             
@@ -417,6 +396,9 @@
                 selectedCustomers = []; 
                 showStage('search'); 
             });
+
+            // --- Start the application ---
+            fetchInitialData();
         });
     </script>
 </body>
