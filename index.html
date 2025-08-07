@@ -103,8 +103,9 @@
             let locationId = null;
             let searchedCustomers = []; 
             let selectedCustomers = [];
-            // Directly set the key for the "B: Pronouns" custom attribute.
+            // Directly set the keys for the custom attributes.
             const pronounsCustomAttributeKey = "square:1af52fc0-c773-45be-8457-204a676fb763"; 
+            const newWaiverCustomAttributeKey = "square:a606d2c0-3a08-4966-ba66-bd68cd24d7fe";
 
             const API_PROXY_URL = 'https://square-checkin-backend.onrender.com';
 
@@ -189,11 +190,82 @@
                 }
             };
 
-            const fetchClubCheckInItems = async () => { try { const categoryData = await apiFetch('/v2/catalog/search', { method: 'POST', body: JSON.stringify({ object_types: ["CATEGORY"] }) }); const category = categoryData.objects?.find(obj => obj.category_data.name.toLowerCase() === 'kiosk check-ins'); if (!category) { console.warn('"Kiosk Check-Ins" category not found.'); return; } const itemsData = await apiFetch('/v2/catalog/search-catalog-items', { method: 'POST', body: JSON.stringify({ "category_ids": [category.id] }) }); if (itemsData.items) { clubCheckInItems = itemsData.items.map(item => ({ name: item.item_data.name, id: item.item_data.variations?.[0]?.id })).filter(item => item.id); } } catch (error) { console.error("Could not fetch club check-in items:", error); } };
-            const fetchLockerRentalInfo = async () => { try { const itemData = await apiFetch('/v2/catalog/search', { method: 'POST', body: JSON.stringify({ object_types: ["ITEM"], query: { text_query: { keywords: ["Locker Rentals"] } } }) }); const lockerItem = itemData.objects?.find(obj => obj.item_data.name.toLowerCase() === 'locker rentals'); if (lockerItem && lockerItem.item_data.variations) { lockerItem.item_data.variations.forEach(variation => { lockerRentalVariationIds.set(variation.id, variation.item_variation_data.name); }); } } catch (error) { console.warn("Could not fetch locker rental info. This feature will be disabled.", error); } };
-            const fetchLocationId = async () => { const data = await apiFetch('/v2/locations'); const activeLocation = data.locations?.find(loc => loc.status === 'ACTIVE'); if (!activeLocation) throw new Error('No active location found for this business.'); locationId = activeLocation.id; };
+            const fetchClubCheckInItems = async () => {
+                try {
+                    const categoryData = await apiFetch('/v2/catalog/search', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            object_types: ["CATEGORY"]
+                        })
+                    });
+                    const category = categoryData.objects?.find(obj => obj.category_data.name.toLowerCase() === 'kiosk check-ins');
+                    if (!category) {
+                        console.warn('"Kiosk Check-Ins" category not found.');
+                        return;
+                    }
+                    const itemsData = await apiFetch('/v2/catalog/search-catalog-items', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            "category_ids": [category.id]
+                        })
+                    });
+                    if (itemsData.items) {
+                        clubCheckInItems = itemsData.items.map(item => ({
+                            name: item.item_data.name,
+                            id: item.item_data.variations?.[0]?.id
+                        })).filter(item => item.id);
+                    }
+                } catch (error) {
+                    console.error("Could not fetch club check-in items:", error);
+                }
+            };
+
+            const fetchLockerRentalInfo = async () => {
+                try {
+                    const itemData = await apiFetch('/v2/catalog/search', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            object_types: ["ITEM"],
+                            query: {
+                                text_query: {
+                                    keywords: ["Locker Rentals"]
+                                }
+                            }
+                        })
+                    });
+                    const lockerItem = itemData.objects?.find(obj => obj.item_data.name.toLowerCase() === 'locker rentals');
+                    if (lockerItem && lockerItem.item_data.variations) {
+                        lockerItem.item_data.variations.forEach(variation => {
+                            lockerRentalVariationIds.set(variation.id, variation.item_variation_data.name);
+                        });
+                    }
+                } catch (error) {
+                    console.warn("Could not fetch locker rental info. This feature will be disabled.", error);
+                }
+            };
+
+            const fetchLocationId = async () => {
+                const data = await apiFetch('/v2/locations');
+                const activeLocation = data.locations?.find(loc => loc.status === 'ACTIVE');
+                if (!activeLocation) throw new Error('No active location found for this business.');
+                locationId = activeLocation.id;
+            };
 
             // --- Core Application Logic ---
+            const getFullCustomerProfile = async (customerId) => {
+                const fullCustomerProfileResponse = await apiFetch(`/v2/customers/${customerId}`);
+                const fullCustomer = fullCustomerProfileResponse.customer;
+
+                const customAttributesResponse = await apiFetch(`/v2/customers/${customerId}/custom-attributes`);
+                if (customAttributesResponse.custom_attributes) {
+                    fullCustomer.custom_attributes = customAttributesResponse.custom_attributes.reduce((acc, attr) => {
+                        acc[attr.key] = attr;
+                        return acc;
+                    }, {});
+                }
+                return fullCustomer;
+            };
+
             const searchCustomers = async () => {
                 const searchValue = document.getElementById('search-value').value.trim();
                 if (!searchValue) return;
@@ -205,11 +277,47 @@
                 try {
                     const data = await apiFetch('/v2/customers/search', {
                         method: 'POST',
-                        body: JSON.stringify({ query: { filter: { phone_number: { exact: formattedPhone } } } })
+                        body: JSON.stringify({
+                            query: {
+                                filter: {
+                                    phone_number: {
+                                        exact: formattedPhone
+                                    }
+                                }
+                            }
+                        })
                     });
-                    searchedCustomers = data.customers || [];
-                    displayCustomerResults();
-                    showStage('results');
+                    
+                    const customers = data.customers || [];
+                    if (customers.length === 0) {
+                        displayCustomerResults(); // This will show the "not found" message
+                        showStage('results');
+                        return;
+                    }
+
+                    showLoader('Checking waiver status...');
+                    const customerProfiles = await Promise.all(customers.map(c => getFullCustomerProfile(c.id)));
+                    
+                    const allHaveSignedWaiver = customerProfiles.every(profile =>
+                        profile.custom_attributes &&
+                        profile.custom_attributes[newWaiverCustomAttributeKey] &&
+                        profile.custom_attributes[newWaiverCustomAttributeKey].value === true
+                    );
+
+                    if (allHaveSignedWaiver) {
+                        searchedCustomers = customerProfiles; // Use the full profiles
+                        displayCustomerResults();
+                        showStage('results');
+                    } else {
+                        hideLoader();
+                        const h1 = document.querySelector('#stage-2-results h1');
+                        const p = document.querySelector('#stage-2-results p');
+                        h1.textContent = 'Waiver Required';
+                        p.textContent = 'Please sign our new waiver to continue.';
+                        resultsList.innerHTML = `<a href="https://www.socialmedium.space/waiver" target="_blank" class="block w-full px-8 py-4 text-white bg-green-600 rounded-md hover:bg-green-700 text-xl">Sign the Waiver</a>`;
+                        checkInSelectedBtn.style.display = 'none';
+                        showStage('results');
+                    }
                 } catch (error) {
                     hideLoader();
                     showError(`Search failed: ${error.message}`);
@@ -217,12 +325,20 @@
             };
             
             const displayCustomerResults = () => {
+                // Reset stage 2 UI to its default state
+                const h1 = document.querySelector('#stage-2-results h1');
+                const p = document.querySelector('#stage-2-results p');
+                h1.textContent = 'Who is checking in?';
+                p.textContent = "Please tap all names you'd like to check in.";
+                checkInSelectedBtn.style.display = 'inline-block';
+
                 resultsList.innerHTML = '';
                 selectedCustomers = []; 
                 checkInSelectedBtn.disabled = true;
 
                 if (searchedCustomers.length === 0) {
                     resultsList.innerHTML = `<p class="text-gray-500 text-center p-4 text-xl">No customers found with that phone number.</p><a href="https://www.socialmedium.space/waiver" target="_blank" class="block w-full mt-4 px-8 py-4 text-white bg-green-600 rounded-md hover:bg-green-700 text-xl">Sign the Waiver</a>`;
+                    checkInSelectedBtn.style.display = 'none';
                     return;
                 }
 
@@ -255,47 +371,28 @@
                 showStage('welcome');
 
                 for (const customer of selectedCustomers) {
-                    const card = await createWelcomeCard(customer);
+                    // No need to re-fetch, full profile is already in selectedCustomers
+                    const card = createWelcomeCard(customer);
                     welcomeCardsContainer.appendChild(card);
                 }
             };
 
-            const createWelcomeCard = async (customer) => {
+            const createWelcomeCard = (customer) => {
                 const card = document.createElement('div');
                 card.className = 'bg-white p-4 rounded-2xl shadow-lg text-left';
                 card.id = `welcome-card-${customer.id}`;
-                card.innerHTML = `<div class="flex justify-center items-center p-8"><div class="spinner"></div></div>`;
+                
+                const nametagContent = getNameTagHTML(customer);
+                const checkInButtons = getCheckInButtonsHTML(customer);
+                const printButton = `<div class="mt-4 no-print"><button class="print-btn w-full p-3 bg-blue-500 text-white rounded-md hover:bg-blue-600 font-semibold">Print Nametag</button></div>`;
+                
+                card.innerHTML = nametagContent + checkInButtons + printButton;
 
-                try {
-                    // Fetch the base customer profile
-                    const fullCustomerProfileResponse = await apiFetch(`/v2/customers/${customer.id}`);
-                    const fullCustomer = fullCustomerProfileResponse.customer;
-
-                    // Fetch the customer's custom attributes
-                    const customAttributesResponse = await apiFetch(`/v2/customers/${customer.id}/custom-attributes`);
-                    if (customAttributesResponse.custom_attributes) {
-                        // Convert array of attributes to a map-like object for easier lookup
-                        fullCustomer.custom_attributes = customAttributesResponse.custom_attributes.reduce((acc, attr) => {
-                            acc[attr.key] = attr;
-                            return acc;
-                        }, {});
-                    }
-
-
-                    const nametagContent = getNameTagHTML(fullCustomer);
-                    const checkInButtons = getCheckInButtonsHTML(fullCustomer);
-                    const printButton = `<div class="mt-4 no-print"><button class="print-btn w-full p-3 bg-blue-500 text-white rounded-md hover:bg-blue-600 font-semibold">Print Nametag</button></div>`;
-                    
-                    card.innerHTML = nametagContent + checkInButtons + printButton;
-
-                    card.querySelectorAll('.check-in-btn').forEach(button => {
-                        button.onclick = () => createItemPurchase(button.dataset.itemId, button.dataset.customerId, button);
-                    });
-                    card.querySelector('.print-btn').onclick = () => printNameTag(card.id);
-                } catch (error) {
-                    console.error(`Failed to fetch full details for customer ${customer.id}:`, error);
-                    card.innerHTML = `<div class="p-4 text-red-600">Could not load details for ${customer.given_name || 'customer'}.</div>`;
-                }
+                card.querySelectorAll('.check-in-btn').forEach(button => {
+                    button.onclick = () => createItemPurchase(button.dataset.itemId, button.dataset.customerId, button);
+                });
+                card.querySelector('.print-btn').onclick = () => printNameTag(card.id);
+                
                 return card;
             };
 
@@ -359,26 +456,45 @@
                 return html;
             };
             
-            const createItemPurchase = async (itemId, customerId, buttonElement) => { 
-                buttonElement.disabled = true; 
-                buttonElement.innerHTML = '<div class="flex justify-center items-center"><div class="spinner"></div></div>'; 
-                const orderPayload = { idempotency_key: crypto.randomUUID(), order: { location_id: locationId, customer_id: customerId, line_items: [{ catalog_object_id: itemId, quantity: '1' }] } }; 
+            const createItemPurchase = async (itemId, customerId, buttonElement) => {
+                buttonElement.disabled = true;
+                buttonElement.innerHTML = '<div class="flex justify-center items-center"><div class="spinner"></div></div>';
+                const orderPayload = {
+                    idempotency_key: crypto.randomUUID(),
+                    order: {
+                        location_id: locationId,
+                        customer_id: customerId,
+                        line_items: [{
+                            catalog_object_id: itemId,
+                            quantity: '1'
+                        }]
+                    }
+                };
                 try {
-                    const orderData = await apiFetch('/v2/orders', { method: 'POST', body: JSON.stringify(orderPayload) });
-                    const payPayload = { idempotency_key: crypto.randomUUID(), payment_ids: [] }; 
-                    await apiFetch(`/v2/orders/${orderData.order.id}/pay`, { method: 'POST', body: JSON.stringify(payPayload) });
-                    buttonElement.className = 'p-3 bg-green-500 text-white rounded-md font-semibold text-sm'; 
-                    buttonElement.textContent = '✓ Recorded'; 
-                } catch (error) { 
-                    console.error("Check-in failed:", error); 
-                    buttonElement.className = 'p-3 bg-red-500 text-white rounded-md font-semibold text-sm'; 
-                    buttonElement.textContent = 'Failed'; 
-                    setTimeout(() => { 
-                        buttonElement.disabled = false; 
-                        buttonElement.className = 'p-3 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 font-semibold text-sm'; 
-                        buttonElement.textContent = 'Retry'; 
-                    }, 3000); 
-                } 
+                    const orderData = await apiFetch('/v2/orders', {
+                        method: 'POST',
+                        body: JSON.stringify(orderPayload)
+                    });
+                    const payPayload = {
+                        idempotency_key: crypto.randomUUID(),
+                        payment_ids: []
+                    };
+                    await apiFetch(`/v2/orders/${orderData.order.id}/pay`, {
+                        method: 'POST',
+                        body: JSON.stringify(payPayload)
+                    });
+                    buttonElement.className = 'p-3 bg-green-500 text-white rounded-md font-semibold text-sm';
+                    buttonElement.textContent = '✓ Recorded';
+                } catch (error) {
+                    console.error("Check-in failed:", error);
+                    buttonElement.className = 'p-3 bg-red-500 text-white rounded-md font-semibold text-sm';
+                    buttonElement.textContent = 'Failed';
+                    setTimeout(() => {
+                        buttonElement.disabled = false;
+                        buttonElement.className = 'p-3 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 font-semibold text-sm';
+                        buttonElement.textContent = 'Retry';
+                    }, 3000);
+                }
             };
 
             // --- Event Listeners ---
