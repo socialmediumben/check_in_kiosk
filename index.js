@@ -25,6 +25,9 @@ app.all('/api/*', async (req, res) => {
     const squareApiUrl = new URL(`https://connect.squareup.com${squareApiPath}`);
     squareApiUrl.search = new URLSearchParams(req.query).toString();
 
+    // NEW: Log the incoming request body
+    console.log('Incoming API Request Body:', req.body);
+
     const squareResponse = await fetch(squareApiUrl.toString(), {
       method: req.method,
       headers: {
