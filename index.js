@@ -24,19 +24,23 @@ app.all('/api/*', async (req, res) => {
     const squareApiPath = req.path.replace('/api', '');
     const squareApiUrl = new URL(`https://connect.squareup.com${squareApiPath}`);
     squareApiUrl.search = new URLSearchParams(req.query).toString();
-
-    // NEW: Log the incoming request body
+    
+    // NEW LOG: Show the request body we received
     console.log('Incoming API Request Body:', req.body);
+
+    // FIX: Ensure a body is only sent for methods that require it and that the body is correctly stringified.
+    const requestBody = req.method !== 'GET' && Object.keys(req.body).length > 0
+      ? JSON.stringify(req.body)
+      : undefined;
 
     const squareResponse = await fetch(squareApiUrl.toString(), {
       method: req.method,
       headers: {
-        // The Authorization header now uses the token from the server's environment.
         'Authorization': `Bearer ${accessToken}`,
         'Square-Version': '2024-07-22',
         'Content-Type': 'application/json',
       },
-      body: req.method !== 'GET' && req.body ? JSON.stringify(req.body) : undefined,
+      body: requestBody,
     });
 
     const data = await squareResponse.json();
