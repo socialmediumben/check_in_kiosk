@@ -12,7 +12,6 @@ app.use(express.json()); // Allow the server to read JSON bodies
 
 // This single route will catch all requests and forward them to Square
 app.all('/api/*', async (req, res) => {
-  // FIX: Retrieve the access token from a secure environment variable on the server.
   const accessToken = process.env.SQUARE_ACCESS_TOKEN;
 
   if (!accessToken) {
@@ -25,13 +24,18 @@ app.all('/api/*', async (req, res) => {
     const squareApiUrl = new URL(`https://connect.squareup.com${squareApiPath}`);
     squareApiUrl.search = new URLSearchParams(req.query).toString();
     
-    // NEW LOG: Show the request body we received
     console.log('Incoming API Request Body:', req.body);
 
-    // FIX: Ensure a body is only sent for methods that require it and that the body is correctly stringified.
-    const requestBody = req.method !== 'GET' && Object.keys(req.body).length > 0
-      ? JSON.stringify(req.body)
-      : undefined;
+    // NEW: Define the request body for forwarding.
+    // It will be an empty object for GET requests or a populated object for others.
+    let requestBody = undefined;
+    if (req.method !== 'GET' && Object.keys(req.body).length > 0) {
+        // Explicitly stringify the body to ensure it's sent correctly
+        requestBody = JSON.stringify(req.body);
+    }
+    
+    // NEW: Log the final request body that is being sent to the Square API
+    console.log('Forwarding Request Body to Square:', requestBody);
 
     const squareResponse = await fetch(squareApiUrl.toString(), {
       method: req.method,
@@ -40,7 +44,7 @@ app.all('/api/*', async (req, res) => {
         'Square-Version': '2024-07-22',
         'Content-Type': 'application/json',
       },
-      body: requestBody,
+      body: requestBody, // Use the new, explicitly stringified body
     });
 
     const data = await squareResponse.json();
