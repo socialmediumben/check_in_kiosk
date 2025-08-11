@@ -26,15 +26,11 @@ app.all('/api/*', async (req, res) => {
     
     console.log('Incoming API Request Body:', req.body);
 
-    // NEW: Define the request body for forwarding.
-    // It will be an empty object for GET requests or a populated object for others.
     let requestBody = undefined;
-    if (req.method !== 'GET' && Object.keys(req.body).length > 0) {
-        // Explicitly stringify the body to ensure it's sent correctly
+    if (req.method !== 'GET' && req.body && Object.keys(req.body).length > 0) {
         requestBody = JSON.stringify(req.body);
     }
     
-    // NEW: Log the final request body that is being sent to the Square API
     console.log('Forwarding Request Body to Square:', requestBody);
 
     const squareResponse = await fetch(squareApiUrl.toString(), {
@@ -44,7 +40,7 @@ app.all('/api/*', async (req, res) => {
         'Square-Version': '2024-07-22',
         'Content-Type': 'application/json',
       },
-      body: requestBody, // Use the new, explicitly stringified body
+      body: requestBody,
     });
 
     const data = await squareResponse.json();
