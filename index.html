@@ -103,7 +103,8 @@
             let locationId = null;
             let searchedCustomers = []; 
             let selectedCustomers = [];
-            // Directly set the keys for the custom attributes.
+            // Directly set the keys for the custom attributes and check-in item.
+            const generalCheckInItemId = "TZY56DM6EAUUOXQTFGDG5DIY";
             const pronounsCustomAttributeKey = "square:1af52fc0-c773-45be-8457-204a676fb763"; 
             const newWaiverCustomAttributeKey = "square:a606d2c0-3a08-4966-ba66-bd68cd24d7fe";
             const customInterestsAttributeKey = "square:44d0b181-7c7b-4c27-97ee-14154777ee7d";
@@ -211,10 +212,13 @@
                         })
                     });
                     if (itemsData.items) {
-                        clubCheckInItems = itemsData.items.map(item => ({
-                            name: item.item_data.name,
-                            id: item.item_data.variations?.[0]?.id
-                        })).filter(item => item.id);
+                        // Filter out the general check-in to get only the additional event check-ins
+                        clubCheckInItems = itemsData.items
+                            .map(item => ({
+                                name: item.item_data.name,
+                                id: item.item_data.variations?.[0]?.id
+                            }))
+                            .filter(item => item.id && item.name.toLowerCase() !== 'check-in');
                     }
                 } catch (error) {
                     console.error("Could not fetch club check-in items:", error);
@@ -367,15 +371,30 @@
 
             const proceedWithSelection = async () => {
                 if (selectedCustomers.length === 0) return;
-                
-                welcomeCardsContainer.innerHTML = '';
-                showStage('welcome');
 
+                showLoader('Processing Check-In...');
+
+                if (!generalCheckInItemId) {
+                    showError("General Check-In item is not configured. Please contact an administrator.");
+                    return;
+                }
+
+                try {
+                    for (const customer of selectedCustomers) {
+                        await createItemPurchase(generalCheckInItemId, customer.id);
+                    }
+                } catch (error) {
+                    showError(`A general check-in failed: ${error.message}`);
+                    return; // Stop if any of the general check-ins fail
+                }
+
+                welcomeCardsContainer.innerHTML = '';
                 for (const customer of selectedCustomers) {
-                    // No need to re-fetch, full profile is already in selectedCustomers
                     const card = createWelcomeCard(customer);
                     welcomeCardsContainer.appendChild(card);
                 }
+
+                showStage('welcome');
             };
 
             const createWelcomeCard = (customer) => {
@@ -469,8 +488,10 @@
             };
             
             const createItemPurchase = async (itemId, customerId, buttonElement) => {
-                buttonElement.disabled = true;
-                buttonElement.innerHTML = '<div class="flex justify-center items-center"><div class="spinner"></div></div>';
+                if (buttonElement) {
+                    buttonElement.disabled = true;
+                    buttonElement.innerHTML = '<div class="flex justify-center items-center"><div class="spinner"></div></div>';
+                }
                 const orderPayload = {
                     idempotency_key: crypto.randomUUID(),
                     order: {
@@ -495,17 +516,23 @@
                         method: 'POST',
                         body: JSON.stringify(payPayload)
                     });
-                    buttonElement.className = 'p-3 bg-green-500 text-white rounded-md font-semibold text-sm';
-                    buttonElement.textContent = '✓ Recorded';
+                    if (buttonElement) {
+                        buttonElement.className = 'p-3 bg-green-500 text-white rounded-md font-semibold text-sm';
+                        buttonElement.textContent = '✓ Recorded';
+                    }
                 } catch (error) {
                     console.error("Check-in failed:", error);
-                    buttonElement.className = 'p-3 bg-red-500 text-white rounded-md font-semibold text-sm';
-                    buttonElement.textContent = 'Failed';
-                    setTimeout(() => {
-                        buttonElement.disabled = false;
-                        buttonElement.className = 'p-3 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 font-semibold text-sm';
-                        buttonElement.textContent = 'Retry';
-                    }, 3000);
+                    if (buttonElement) {
+                        buttonElement.className = 'p-3 bg-red-500 text-white rounded-md font-semibold text-sm';
+                        buttonElement.textContent = 'Failed';
+                        setTimeout(() => {
+                            buttonElement.disabled = false;
+                            buttonElement.className = 'p-3 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 font-semibold text-sm';
+                            buttonElement.textContent = 'Retry';
+                        }, 3000);
+                    }
+                    // Re-throw the error to be caught by the caller if needed
+                    throw error;
                 }
             };
 
