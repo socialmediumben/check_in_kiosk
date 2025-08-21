@@ -38,7 +38,8 @@ app.all('/api/*', async (req, res) => {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Square-Version': '2024-07-22',
-        'Content-Type': 'application/json',
+        // NEW: Explicitly define Content-Type with charset
+        'Content-Type': 'application/json; charset=utf-8', 
       },
       body: requestBody,
     });
