@@ -25,23 +25,25 @@ app.all('/api/*', async (req, res) => {
     squareApiUrl.search = new URLSearchParams(req.query).toString();
     
     console.log('Incoming API Request Body:', req.body);
-
-    let requestBody = undefined;
-    if (req.method !== 'GET' && req.body && Object.keys(req.body).length > 0) {
-        requestBody = JSON.stringify(req.body);
+    
+    // Create an options object for the fetch call
+    const fetchOptions = {
+        method: req.method,
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Square-Version': '2024-07-22',
+            'Content-Type': 'application/json',
+        }
+    };
+    
+    // Conditionally add the body to the options object for non-GET requests
+    if (req.method !== 'GET' && Object.keys(req.body).length > 0) {
+        fetchOptions.body = JSON.stringify(req.body);
     }
     
-    console.log('Forwarding Request Body to Square:', requestBody);
+    console.log('Forwarding Request Options to Square:', fetchOptions);
 
-    const squareResponse = await fetch(squareApiUrl.toString(), {
-      method: req.method,
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Square-Version': '2024-07-22',
-        'Content-Type': 'application/json',
-      },
-      body: requestBody,
-    });
+    const squareResponse = await fetch(squareApiUrl.toString(), fetchOptions);
 
     const data = await squareResponse.json();
 
