@@ -8,6 +8,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(cors()); // Enable CORS for all routes
+app.use(express.json()); // Allow the server to read JSON bodies
 
 // This single route will catch all requests and forward them to Square
 app.all('/api/*', async (req, res) => {
@@ -23,47 +24,29 @@ app.all('/api/*', async (req, res) => {
     const squareApiUrl = new URL(`https://connect.squareup.com${squareApiPath}`);
     squareApiUrl.search = new URLSearchParams(req.query).toString();
     
-    // Manually read the raw request body as a string
-    let requestBody = '';
-    await new Promise((resolve, reject) => {
-      req.on('data', chunk => {
-        requestBody += chunk.toString();
-      });
-      req.on('end', resolve);
-      req.on('error', reject);
-    });
-
-    // Parse the JSON string to log the content
-    let parsedBody = {};
-    if (requestBody) {
-      try {
-        parsedBody = JSON.parse(requestBody);
-      } catch (e) {
-        console.error('Failed to parse incoming JSON body:', e);
-      }
+    console.log('Incoming API Request Body:', req.body);
+    
+    let requestBody = undefined;
+    if (req.method !== 'GET' && req.body && Object.keys(req.body).length > 0) {
+        requestBody = JSON.stringify(req.body);
     }
-    console.log('Incoming API Request Body:', parsedBody);
+    
     console.log('Forwarding Request Body to Square:', requestBody);
 
-    // Create the fetch options
-    const fetchOptions = {
+    const squareResponse = await fetch(squareApiUrl.toString(), {
       method: req.method,
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Square-Version': '2024-07-22',
         'Content-Type': 'application/json; charset=utf-8', 
-      }
-    };
-    
-    // Conditionally add the raw body string to the options
-    if (requestBody) {
-        fetchOptions.body = requestBody;
-    }
+      },
+      body: requestBody,
+    });
 
-    const squareResponse = await fetch(squareApiUrl.toString(), fetchOptions);
     const data = await squareResponse.json();
 
     if (!squareResponse.ok) {
+      console.error('API Error Response:', data); // Log the full error
       return res.status(squareResponse.status).json(data);
     }
 
