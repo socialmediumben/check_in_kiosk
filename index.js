@@ -1,4 +1,4 @@
-// index.js - The final backend server for Render with dedicated endpoints
+// index.js - The final backend server for Render
 
 const express = require('express');
 const cors = require('cors');
@@ -7,13 +7,11 @@ const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(cors());
-app.use(express.json());
+app.use(cors()); // Enable CORS for all routes
+app.use(express.json()); // Allow the server to read JSON bodies
 
-const SQUARE_API_BASE_URL = 'https://connect.squareup.com/v2';
-
-// --- Helper function to forward requests ---
-const proxyToSquare = async (req, res, endpoint) => {
+// This single route will catch all requests and forward them to Square
+app.all('/api/*', async (req, res) => {
   const accessToken = process.env.SQUARE_ACCESS_TOKEN;
 
   if (!accessToken) {
@@ -22,32 +20,34 @@ const proxyToSquare = async (req, res, endpoint) => {
   }
 
   try {
-    const squareApiUrl = `${SQUARE_API_BASE_URL}${endpoint}`;
+    const squareApiPath = req.path.replace('/api', '');
+    const squareApiUrl = new URL(`https://connect.squareup.com${squareApiPath}`);
+    squareApiUrl.search = new URLSearchParams(req.query).toString();
     
-    console.log(`Forwarding request to: ${squareApiUrl}`);
     console.log('Incoming API Request Body:', req.body);
     
-    // Create the body based on the incoming request.
-    const requestBody = req.method !== 'GET' && Object.keys(req.body).length > 0
-      ? JSON.stringify(req.body)
-      : undefined;
+    // Create an options object for the fetch call
+    const fetchOptions = {
+        method: req.method,
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Square-Version': '2024-07-22',
+            'Content-Type': 'application/json',
+        }
+    };
+    
+    // Conditionally add the body to the options object for non-GET requests
+    if (req.method !== 'GET' && Object.keys(req.body).length > 0) {
+        fetchOptions.body = JSON.stringify(req.body);
+    }
+    
+    console.log('Forwarding Request Options to Square:', fetchOptions);
 
-    console.log('Forwarding Request Body to Square:', requestBody);
-
-    const squareResponse = await fetch(squareApiUrl, {
-      method: req.method,
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Square-Version': '2024-07-22',
-        'Content-Type': 'application/json; charset=utf-8',
-      },
-      body: requestBody,
-    });
+    const squareResponse = await fetch(squareApiUrl.toString(), fetchOptions);
 
     const data = await squareResponse.json();
 
     if (!squareResponse.ok) {
-      console.error('API Error Response:', data);
       return res.status(squareResponse.status).json(data);
     }
 
@@ -57,29 +57,6 @@ const proxyToSquare = async (req, res, endpoint) => {
     console.error("Error proxying to Square:", error);
     res.status(500).json({ error: 'An internal server error occurred.' });
   }
-};
-
-// --- Dedicated Proxy Endpoints ---
-
-// Endpoint for fetching location data
-app.get('/api/locations', (req, res) => {
-    proxyToSquare(req, res, '/locations');
-});
-
-// Endpoint for searching the catalog
-app.post('/api/catalog/search', (req, res) => {
-    proxyToSquare(req, res, '/catalog/search');
-});
-
-// Endpoint for searching orders
-app.post('/api/orders/search', (req, res) => {
-    proxyToSquare(req, res, '/orders/search');
-});
-
-// Endpoint for getting a single customer
-app.get('/api/customers/:id', (req, res) => {
-    const customerId = req.params.id;
-    proxyToSquare(req, res, `/customers/${customerId}`);
 });
 
 app.listen(port, () => {
