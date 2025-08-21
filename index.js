@@ -1,14 +1,14 @@
-// index.js - The final backend server for Render using Axios
+// index.js - The final backend server for Render
 
 const express = require('express');
 const cors = require('cors');
-const axios = require('axios'); // Use axios for a more reliable HTTP client
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(cors());
-app.use(express.json());
+app.use(cors()); // Enable CORS for all routes
+app.use(express.json()); // Allow the server to read JSON bodies
 
 // This single route will catch all requests and forward them to Square
 app.all('/api/*', async (req, res) => {
@@ -21,47 +21,39 @@ app.all('/api/*', async (req, res) => {
 
   try {
     const squareApiPath = req.path.replace('/api', '');
-    const squareApiUrl = `https://connect.squareup.com${squareApiPath}`;
+    const squareApiUrl = new URL(`https://connect.squareup.com${squareApiPath}`);
+    squareApiUrl.search = new URLSearchParams(req.query).toString();
     
-    // Log the incoming request body from the front-end
     console.log('Incoming API Request Body:', req.body);
     
-    // Prepare the request body for axios
-    const requestData = req.method !== 'GET' ? req.body : undefined;
+    let requestBody = undefined;
+    if (req.method !== 'GET' && req.body && Object.keys(req.body).length > 0) {
+        requestBody = JSON.stringify(req.body);
+    }
+    
+    console.log('Forwarding Request Body to Square:', requestBody);
 
-    // Use axios to make the request, it handles JSON bodies more reliably
-    const squareResponse = await axios({
+    const squareResponse = await fetch(squareApiUrl.toString(), {
       method: req.method,
-      url: squareApiUrl,
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Square-Version': '2024-07-22',
         'Content-Type': 'application/json',
       },
-      params: req.query, // Pass query parameters if any
-      data: requestData, // Pass the request body
+      body: requestBody,
     });
 
-    // Log the data received from Square API for debugging
-    console.log('Data received from Square:', squareResponse.data);
+    const data = await squareResponse.json();
 
-    res.status(squareResponse.status).json(squareResponse.data);
+    if (!squareResponse.ok) {
+      return res.status(squareResponse.status).json(data);
+    }
+
+    res.status(200).json(data);
 
   } catch (error) {
-    console.error("Error proxying to Square:", error.message);
-    if (error.response) {
-      // The request was made and the server responded with a status code
-      // that falls out of the range of 2xx
-      console.error('Square API responded with:', error.response.status, error.response.data);
-      res.status(error.response.status).json(error.response.data);
-    } else if (error.request) {
-      // The request was made but no response was received
-      console.error('No response received from Square API:', error.request);
-      res.status(500).json({ error: 'No response from Square API.' });
-    } else {
-      // Something happened in setting up the request that triggered an Error
-      res.status(500).json({ error: 'An internal server error occurred.' });
-    }
+    console.error("Error proxying to Square:", error);
+    res.status(500).json({ error: 'An internal server error occurred.' });
   }
 });
 
