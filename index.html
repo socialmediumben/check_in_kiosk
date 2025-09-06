@@ -99,15 +99,18 @@
             // --- State Variables ---
             let allListsMap = new Map();
             let clubCheckInItems = [];
+            let specialEventItems = []; // For the RSVP feature
             let lockerRentalVariationIds = new Map();
             let locationId = null;
             let searchedCustomers = []; 
             let selectedCustomers = [];
-            // Directly set the keys for the custom attributes and check-in item.
+            
+            // Directly set the keys and IDs for attributes and items.
             const generalCheckInItemId = "TZY56DM6EAUUOXQTFGDG5DIY";
-            const pronounsCustomAttributeKey = "square:1af52fc0-c773-45be-8457-204a676fb763"; 
+            const pronounsCustomAttributeKey = "square:1af52fc0-c773-4be-8457-204a676fb763"; 
             const newWaiverCustomAttributeKey = "square:a606d2c0-3a08-4966-ba66-bd68cd24d7fe";
             const customInterestsAttributeKey = "square:44d0b181-7c7b-4c27-97ee-14154777ee7d";
+            const currentMemberSegmentId = 'gv2:Q9MRB36PK54HQ38VH9VYJV6P8G'; // Correct ID for the member segment
 
             const API_PROXY_URL = 'https://square-checkin-backend.onrender.com';
 
@@ -148,7 +151,6 @@
             
             // --- API Fetch Function ---
             const apiFetch = async (endpoint, options = {}) => {
-                // The access token is no longer sent from the client.
                 const response = await fetch(`${API_PROXY_URL}/api${endpoint}`, {
                     ...options,
                     headers: { ...options.headers, 'Content-Type': 'application/json' },
@@ -163,10 +165,8 @@
                 showLoader('Activating kiosk...');
                 try {
                     console.log("Starting initial data fetch...");
-                    showLoader('Fetching Groups...');
+                    showLoader('Fetching Groups & Segments...');
                     const groupsData = await apiFetch('/v2/customers/groups');
-                    
-                    showLoader('Fetching Segments...');
                     const segmentsData = await apiFetch('/v2/customers/segments');
 
                     allListsMap.clear();
@@ -175,6 +175,9 @@
                     
                     showLoader('Fetching Check-in Items...');
                     await fetchClubCheckInItems();
+                    
+                    showLoader('Fetching Special Events...');
+                    await fetchSpecialEvents();
 
                     showLoader('Fetching Locker Info...');
                     await fetchLockerRentalInfo();
@@ -186,9 +189,33 @@
                     showStage('search');
                 } catch (error) {
                     hideLoader();
-                    const errorMessage = `Initialization failed while ${loader.querySelector('p').textContent.toLowerCase()}. Error: ${error.message}`;
+                    const errorMessage = `Initialization failed: ${error.message}`;
                     console.error(errorMessage);
                     showError(errorMessage);
+                }
+            };
+            
+            const fetchSpecialEvents = async () => {
+                try {
+                    const categoryData = await apiFetch('/v2/catalog/search', {
+                        method: 'POST', body: JSON.stringify({ object_types: ["CATEGORY"] })
+                    });
+                    const category = categoryData.objects?.find(obj => obj.category_data.name.toLowerCase() === 'special events');
+                    if (!category) {
+                        console.warn('"Special Events" category not found.');
+                        return;
+                    }
+                    const itemsData = await apiFetch('/v2/catalog/search-catalog-items', {
+                        method: 'POST', body: JSON.stringify({ "category_ids": [category.id] })
+                    });
+                    if (itemsData.items) {
+                        specialEventItems = itemsData.items.map(item => ({
+                            name: item.item_data.name,
+                            id: item.item_data.variations?.[0]?.id
+                        })).filter(item => item.id);
+                    }
+                } catch (error) {
+                    console.error("Could not fetch special event items:", error);
                 }
             };
 
@@ -196,9 +223,7 @@
                 try {
                     const categoryData = await apiFetch('/v2/catalog/search', {
                         method: 'POST',
-                        body: JSON.stringify({
-                            object_types: ["CATEGORY"]
-                        })
+                        body: JSON.stringify({ object_types: ["CATEGORY"] })
                     });
                     const category = categoryData.objects?.find(obj => obj.category_data.name.toLowerCase() === 'kiosk check-ins');
                     if (!category) {
@@ -207,12 +232,9 @@
                     }
                     const itemsData = await apiFetch('/v2/catalog/search-catalog-items', {
                         method: 'POST',
-                        body: JSON.stringify({
-                            "category_ids": [category.id]
-                        })
+                        body: JSON.stringify({ "category_ids": [category.id] })
                     });
                     if (itemsData.items) {
-                        // Filter out the general check-in to get only the additional event check-ins
                         clubCheckInItems = itemsData.items
                             .map(item => ({
                                 name: item.item_data.name,
@@ -231,11 +253,7 @@
                         method: 'POST',
                         body: JSON.stringify({
                             object_types: ["ITEM"],
-                            query: {
-                                text_query: {
-                                    keywords: ["Locker Rentals"]
-                                }
-                            }
+                            query: { text_query: { keywords: ["Locker Rentals"] } }
                         })
                     });
                     const lockerItem = itemData.objects?.find(obj => obj.item_data.name.toLowerCase() === 'locker rentals');
@@ -245,14 +263,14 @@
                         });
                     }
                 } catch (error) {
-                    console.warn("Could not fetch locker rental info. This feature will be disabled.", error);
+                    console.warn("Could not fetch locker rental info.", error);
                 }
             };
 
             const fetchLocationId = async () => {
                 const data = await apiFetch('/v2/locations');
                 const activeLocation = data.locations?.find(loc => loc.status === 'ACTIVE');
-                if (!activeLocation) throw new Error('No active location found for this business.');
+                if (!activeLocation) throw new Error('No active location found.');
                 locationId = activeLocation.id;
             };
 
@@ -283,19 +301,13 @@
                     const data = await apiFetch('/v2/customers/search', {
                         method: 'POST',
                         body: JSON.stringify({
-                            query: {
-                                filter: {
-                                    phone_number: {
-                                        exact: formattedPhone
-                                    }
-                                }
-                            }
+                            query: { filter: { phone_number: { exact: formattedPhone } } }
                         })
                     });
                     
                     const customers = data.customers || [];
                     if (customers.length === 0) {
-                        displayCustomerResults(); // This will show the "not found" message
+                        displayCustomerResults();
                         showStage('results');
                         return;
                     }
@@ -310,7 +322,7 @@
                     );
 
                     if (allHaveSignedWaiver) {
-                        searchedCustomers = customerProfiles; // Use the full profiles
+                        searchedCustomers = customerProfiles;
                         displayCustomerResults();
                         showStage('results');
                     } else {
@@ -330,7 +342,6 @@
             };
             
             const displayCustomerResults = () => {
-                // Reset stage 2 UI to its default state
                 const h1 = document.querySelector('#stage-2-results h1');
                 const p = document.querySelector('#stage-2-results p');
                 h1.textContent = 'Who is checking in?';
@@ -342,7 +353,7 @@
                 checkInSelectedBtn.disabled = true;
 
                 if (searchedCustomers.length === 0) {
-                    resultsList.innerHTML = `<p class="text-gray-500 text-center p-4 text-xl">No customers found with that phone number.</p><a href="https://www.socialmedium.space/waiver" target="_blank" class="block w-full mt-4 px-8 py-4 text-white bg-green-600 rounded-md hover:bg-green-700 text-xl">Sign the Waiver</a>`;
+                    resultsList.innerHTML = `<p class="text-gray-500 text-center p-4 text-xl">No customers found.</p><a href="https://www.socialmedium.space/waiver" target="_blank" class="block w-full mt-4 px-8 py-4 text-white bg-green-600 rounded-md hover:bg-green-700 text-xl">Sign the Waiver</a>`;
                     checkInSelectedBtn.style.display = 'none';
                     return;
                 }
@@ -371,29 +382,24 @@
 
             const proceedWithSelection = async () => {
                 if (selectedCustomers.length === 0) return;
-
                 showLoader('Processing Check-In...');
-
                 if (!generalCheckInItemId) {
-                    showError("General Check-In item is not configured. Please contact an administrator.");
+                    showError("General Check-In item is not configured.");
                     return;
                 }
-
                 try {
                     for (const customer of selectedCustomers) {
                         await createItemPurchase(generalCheckInItemId, customer.id);
                     }
                 } catch (error) {
                     showError(`A general check-in failed: ${error.message}`);
-                    return; // Stop if any of the general check-ins fail
+                    return;
                 }
-
                 welcomeCardsContainer.innerHTML = '';
                 for (const customer of selectedCustomers) {
                     const card = createWelcomeCard(customer);
                     welcomeCardsContainer.appendChild(card);
                 }
-
                 showStage('welcome');
             };
 
@@ -404,12 +410,16 @@
                 
                 const nametagContent = getNameTagHTML(customer);
                 const checkInButtons = getCheckInButtonsHTML(customer);
+                const rsvpButtons = getEventRsvpButtonsHTML(customer);
                 const printButton = `<div class="mt-4 no-print"><button class="print-btn w-full p-3 bg-blue-500 text-white rounded-md hover:bg-blue-600 font-semibold">Print Nametag</button></div>`;
                 
-                card.innerHTML = nametagContent + checkInButtons + printButton;
+                card.innerHTML = nametagContent + checkInButtons + rsvpButtons + printButton;
 
                 card.querySelectorAll('.check-in-btn').forEach(button => {
                     button.onclick = () => createItemPurchase(button.dataset.itemId, button.dataset.customerId, button);
+                });
+                card.querySelectorAll('.rsvp-btn').forEach(button => {
+                    button.onclick = () => createRsvpPurchase(button.dataset.itemId, button.dataset.customerId, button);
                 });
                 card.querySelector('.print-btn').onclick = () => printNameTag(card.id);
                 
@@ -444,11 +454,9 @@
                     }
                 });
                 
-                // Add custom interests from the text field
                 if (customInterestsAttributeKey && customer.custom_attributes && customer.custom_attributes[customInterestsAttributeKey]) {
                     const customValue = customer.custom_attributes[customInterestsAttributeKey].value;
                     if (customValue && customValue.trim() !== '') {
-                        // Split by comma and add each interest to the set
                         const customInterestsArray = customValue.split(',').map(interest => interest.trim()).filter(interest => interest);
                         customInterestsArray.forEach(interest => customerInterests.add(interest));
                     }
@@ -457,7 +465,6 @@
                 const interestsString = [...customerInterests].join(', ');
 
                 let pronouns = '_______________';
-                // Check if the key and the attributes object exist
                 if (pronounsCustomAttributeKey && customer.custom_attributes && customer.custom_attributes[pronounsCustomAttributeKey]) {
                     pronouns = customer.custom_attributes[pronounsCustomAttributeKey].value || '_______________';
                 }
@@ -486,6 +493,71 @@
                 html += `</div></div>`;
                 return html;
             };
+
+            const getEventRsvpButtonsHTML = (customer) => {
+                const isMember = customer.segment_ids && customer.segment_ids.includes(currentMemberSegmentId);
+                if (!isMember || specialEventItems.length === 0) return '';
+
+                let html = `<div class="mt-4 no-print"><h2 class="text-lg font-semibold text-gray-800 mb-3 text-center">RSVP for Special Events:</h2><div class="grid grid-cols-2 gap-3">`;
+                specialEventItems.forEach(item => {
+                    html += `<button class="rsvp-btn p-3 bg-purple-200 text-purple-800 rounded-md hover:bg-purple-300 font-semibold text-sm" data-item-id="${item.id}" data-customer-id="${customer.id}">${item.name}</button>`;
+                });
+                html += `</div></div>`;
+                return html;
+            };
+
+            const createRsvpPurchase = async (itemId, customerId, buttonElement) => {
+                if (buttonElement) {
+                    buttonElement.disabled = true;
+                    buttonElement.innerHTML = '<div class="flex justify-center items-center"><div class="spinner"></div></div>';
+                }
+
+                // FIX: Use the modern, correct way to apply discounts
+                const discountUID = 'MEMBER-RSVP-DISCOUNT'; // A unique ID for the discount within this order
+
+                const orderPayload = {
+                    idempotency_key: crypto.randomUUID(),
+                    order: {
+                        location_id: locationId,
+                        customer_id: customerId,
+                        line_items: [{
+                            catalog_object_id: itemId,
+                            quantity: '1',
+                            applied_discounts: [{
+                                discount_uid: discountUID
+                            }]
+                        }],
+                        discounts: [{
+                            uid: discountUID,
+                            name: "Member RSVP",
+                            percentage: "100",
+                            scope: "LINE_ITEM"
+                        }]
+                    }
+                };
+                try {
+                    const orderData = await apiFetch('/v2/orders', { method: 'POST', body: JSON.stringify(orderPayload) });
+                    const payPayload = { idempotency_key: crypto.randomUUID(), payment_ids: [] };
+                    await apiFetch(`/v2/orders/${orderData.order.id}/pay`, { method: 'POST', body: JSON.stringify(payPayload) });
+                    
+                    if (buttonElement) {
+                        buttonElement.className = 'p-3 bg-green-500 text-white rounded-md font-semibold text-sm';
+                        buttonElement.textContent = '✓ RSVPd';
+                    }
+                } catch (error) {
+                    console.error("RSVP failed:", error);
+                    if (buttonElement) {
+                        buttonElement.className = 'p-3 bg-red-500 text-white rounded-md font-semibold text-sm';
+                        buttonElement.textContent = 'Failed';
+                        setTimeout(() => {
+                            buttonElement.disabled = false;
+                            buttonElement.className = 'p-3 bg-purple-200 text-purple-800 rounded-md hover:bg-purple-300 font-semibold text-sm';
+                            buttonElement.textContent = 'Retry';
+                        }, 3000);
+                    }
+                    throw error;
+                }
+            };
             
             const createItemPurchase = async (itemId, customerId, buttonElement) => {
                 if (buttonElement) {
@@ -497,24 +569,19 @@
                     order: {
                         location_id: locationId,
                         customer_id: customerId,
-                        line_items: [{
-                            catalog_object_id: itemId,
-                            quantity: '1'
-                        }]
+                        line_items: [{ catalog_object_id: itemId, quantity: '1' }]
                     }
                 };
                 try {
                     const orderData = await apiFetch('/v2/orders', {
-                        method: 'POST',
-                        body: JSON.stringify(orderPayload)
+                        method: 'POST', body: JSON.stringify(orderPayload)
                     });
                     const payPayload = {
                         idempotency_key: crypto.randomUUID(),
                         payment_ids: []
                     };
                     await apiFetch(`/v2/orders/${orderData.order.id}/pay`, {
-                        method: 'POST',
-                        body: JSON.stringify(payPayload)
+                        method: 'POST', body: JSON.stringify(payPayload)
                     });
                     if (buttonElement) {
                         buttonElement.className = 'p-3 bg-green-500 text-white rounded-md font-semibold text-sm';
@@ -531,7 +598,6 @@
                             buttonElement.textContent = 'Retry';
                         }, 3000);
                     }
-                    // Re-throw the error to be caught by the caller if needed
                     throw error;
                 }
             };
@@ -558,3 +624,4 @@
     </script>
 </body>
 </html>
+
