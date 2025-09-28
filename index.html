@@ -107,7 +107,7 @@
             
             // Directly set the keys and IDs for attributes and items.
             const generalCheckInItemId = "TZY56DM6EAUUOXQTFGDG5DIY";
-            const pronounsCustomAttributeKey = "square:1af52fc0-c773-4be-8457-204a676fb763"; 
+            const pronounsCustomAttributeKey = "square:1af52fc0-c773-45be-8457-204a676fb763"; // FIX: Corrected the typo
             const newWaiverCustomAttributeKey = "square:a606d2c0-3a08-4966-ba66-bd68cd24d7fe";
             const customInterestsAttributeKey = "square:44d0b181-7c7b-4c27-97ee-14154777ee7d";
             const currentMemberSegmentId = 'gv2:Q9MRB36PK54HQ38VH9VYJV6P8G'; // Correct ID for the member segment
@@ -512,8 +512,7 @@
                     buttonElement.innerHTML = '<div class="flex justify-center items-center"><div class="spinner"></div></div>';
                 }
 
-                // FIX: Use the modern, correct way to apply discounts
-                const discountUID = 'MEMBER-RSVP-DISCOUNT'; // A unique ID for the discount within this order
+                const discountUID = 'MEMBER-RSVP-DISCOUNT';
 
                 const orderPayload = {
                     idempotency_key: crypto.randomUUID(),
