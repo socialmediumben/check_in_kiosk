@@ -34,6 +34,13 @@
             .no-print {
                 display: none;
             }
+            /* Larger font sizes for specific nametag sections when printing */
+            .nametag-pronouns,
+            .nametag-interests-header,
+            .nametag-interests-list {
+                font-size: 1.75rem !important; /* Increased font size for printing */
+                line-height: 2.25rem !important; /* Adjust line height accordingly */
+            }
         }
     </style>
 </head>
@@ -107,7 +114,7 @@
             
             // Directly set the keys and IDs for attributes and items.
             const generalCheckInItemId = "TZY56DM6EAUUOXQTFGDG5DIY";
-            const pronounsCustomAttributeKey = "square:1af52fc0-c773-45be-8457-204a676fb763"; // FIX: Corrected the typo
+            const pronounsCustomAttributeKey = "square:1af52fc0-c773-45be-8457-204a676fb763";
             const newWaiverCustomAttributeKey = "square:a606d2c0-3a08-4966-ba66-bd68cd24d7fe";
             const customInterestsAttributeKey = "square:44d0b181-7c7b-4c27-97ee-14154777ee7d";
             const currentMemberSegmentId = 'gv2:Q9MRB36PK54HQ38VH9VYJV6P8G'; // Correct ID for the member segment
@@ -475,10 +482,10 @@
                             ${membershipType}
                         </div>
                         <div class="text-8xl font-black">${customer.given_name || ''}</div>
-                        <div class="mt-4 text-xl">Pronouns: ${pronouns}</div>
+                        <div class="mt-4 text-xl nametag-pronouns">Pronouns: ${pronouns}</div>
                         <div class="mt-6">
-                            <div class="text-2xl font-bold">I'm Nerdy for...</div>
-                            <div class="text-xl mt-1">${interestsString || 'N/A'}</div>
+                            <div class="text-2xl font-bold nametag-interests-header">I'm Nerdy for...</div>
+                            <div class="text-xl mt-1 nametag-interests-list">${interestsString || 'N/A'}</div>
                         </div>
                     </div>
                 `;
