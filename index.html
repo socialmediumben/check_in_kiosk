@@ -53,12 +53,19 @@
             <h1 class="text-4xl font-bold text-gray-800">Customer Check-In</h1>
             <p class="text-gray-500 mt-2 mb-8">Please enter your phone number to begin.</p>
             <div class="flex items-center space-x-3">
-                <input type="tel" id="search-value" class="flex-grow block w-full px-4 py-3 text-2xl text-center text-gray-700 bg-white border border-gray-300 rounded-md" placeholder="e.g., (415) 555-1234">
+                <!-- Added autocomplete="off" and autocorrect="off" to prevent privacy leaks on public kiosk -->
+                <input type="tel" 
+                       id="search-value" 
+                       autocomplete="off" 
+                       autocorrect="off" 
+                       spellcheck="false"
+                       class="flex-grow block w-full px-4 py-3 text-2xl text-center text-gray-700 bg-white border border-gray-300 rounded-md" 
+                       placeholder="e.g., (415) 555-1234">
                 <button id="search-btn" class="px-8 py-3 text-white bg-cyan-600 rounded-md hover:bg-cyan-700 text-xl">Search</button>
             </div>
             <div class="mt-6">
                 <p class="text-gray-500 mb-2">New here?</p>
-                <a href="https://www.socialmedium.space/waiver" target="_blank" class="block w-full px-8 py-3 text-white bg-green-600 rounded-md hover:bg-green-700 text-xl">
+                <a href="https://www.socialmedium.space/waiver" target="_blank" class="block w-full px-8 py-3 text-white bg-green-600 rounded-md hover:bg-green-700 text-xl text-center">
                     Sign the Waiver
                 </a>
             </div>
@@ -117,7 +124,7 @@
             const pronounsCustomAttributeKey = "square:1af52fc0-c773-45be-8457-204a676fb763";
             const newWaiverCustomAttributeKey = "square:a606d2c0-3a08-4966-ba66-bd68cd24d7fe";
             const customInterestsAttributeKey = "square:44d0b181-7c7b-4c27-97ee-14154777ee7d";
-            const currentMemberSegmentId = 'gv2:Q9MRB36PK54HQ38VH9VYJV6P8G'; // Correct ID for the member segment
+            const currentMemberSegmentId = 'gv2:Q9MRB36PK54HQ38VH9VYJV6P8G'; 
 
             const API_PROXY_URL = 'https://square-checkin-backend.onrender.com';
 
@@ -171,8 +178,6 @@
             const fetchInitialData = async () => {
                 showLoader('Activating kiosk...');
                 try {
-                    console.log("Starting initial data fetch...");
-                    showLoader('Fetching Groups & Segments...');
                     const groupsData = await apiFetch('/v2/customers/groups');
                     const segmentsData = await apiFetch('/v2/customers/segments');
 
@@ -180,25 +185,15 @@
                     if (groupsData.groups) groupsData.groups.forEach(group => allListsMap.set(group.id, group.name));
                     if (segmentsData.segments) segmentsData.segments.forEach(segment => allListsMap.set(segment.id, segment.name));
                     
-                    showLoader('Fetching Check-in Items...');
                     await fetchClubCheckInItems();
-                    
-                    showLoader('Fetching Special Events...');
                     await fetchSpecialEvents();
-
-                    showLoader('Fetching Locker Info...');
                     await fetchLockerRentalInfo();
-
-                    showLoader('Fetching Location Info...');
                     await fetchLocationId();
                     
-                    console.log("Initial data fetch complete.");
                     showStage('search');
                 } catch (error) {
                     hideLoader();
-                    const errorMessage = `Initialization failed: ${error.message}`;
-                    console.error(errorMessage);
-                    showError(errorMessage);
+                    showError(`Initialization failed: ${error.message}`);
                 }
             };
             
@@ -208,10 +203,7 @@
                         method: 'POST', body: JSON.stringify({ object_types: ["CATEGORY"] })
                     });
                     const category = categoryData.objects?.find(obj => obj.category_data.name.toLowerCase() === 'special events');
-                    if (!category) {
-                        console.warn('"Special Events" category not found.');
-                        return;
-                    }
+                    if (!category) return;
                     const itemsData = await apiFetch('/v2/catalog/search-catalog-items', {
                         method: 'POST', body: JSON.stringify({ "category_ids": [category.id] })
                     });
@@ -221,25 +213,18 @@
                             id: item.item_data.variations?.[0]?.id
                         })).filter(item => item.id);
                     }
-                } catch (error) {
-                    console.error("Could not fetch special event items:", error);
-                }
+                } catch (error) {}
             };
 
             const fetchClubCheckInItems = async () => {
                 try {
                     const categoryData = await apiFetch('/v2/catalog/search', {
-                        method: 'POST',
-                        body: JSON.stringify({ object_types: ["CATEGORY"] })
+                        method: 'POST', body: JSON.stringify({ object_types: ["CATEGORY"] })
                     });
                     const category = categoryData.objects?.find(obj => obj.category_data.name.toLowerCase() === 'kiosk check-ins');
-                    if (!category) {
-                        console.warn('"Kiosk Check-Ins" category not found.');
-                        return;
-                    }
+                    if (!category) return;
                     const itemsData = await apiFetch('/v2/catalog/search-catalog-items', {
-                        method: 'POST',
-                        body: JSON.stringify({ "category_ids": [category.id] })
+                        method: 'POST', body: JSON.stringify({ "category_ids": [category.id] })
                     });
                     if (itemsData.items) {
                         clubCheckInItems = itemsData.items
@@ -249,9 +234,7 @@
                             }))
                             .filter(item => item.id && item.name.toLowerCase() !== 'check-in');
                     }
-                } catch (error) {
-                    console.error("Could not fetch club check-in items:", error);
-                }
+                } catch (error) {}
             };
 
             const fetchLockerRentalInfo = async () => {
@@ -269,9 +252,7 @@
                             lockerRentalVariationIds.set(variation.id, variation.item_variation_data.name);
                         });
                     }
-                } catch (error) {
-                    console.warn("Could not fetch locker rental info.", error);
-                }
+                } catch (error) {}
             };
 
             const fetchLocationId = async () => {
@@ -338,7 +319,7 @@
                         const p = document.querySelector('#stage-2-results p');
                         h1.textContent = 'Waiver Required';
                         p.textContent = 'Please sign our new waiver to continue.';
-                        resultsList.innerHTML = `<a href="https://www.socialmedium.space/waiver" target="_blank" class="block w-full px-8 py-4 text-white bg-green-600 rounded-md hover:bg-green-700 text-xl">Sign the Waiver</a>`;
+                        resultsList.innerHTML = `<a href="https://www.socialmedium.space/waiver" target="_blank" class="block w-full px-8 py-4 text-white bg-green-600 rounded-md hover:bg-green-700 text-xl text-center">Sign the Waiver</a>`;
                         checkInSelectedBtn.style.display = 'none';
                         showStage('results');
                     }
@@ -360,7 +341,7 @@
                 checkInSelectedBtn.disabled = true;
 
                 if (searchedCustomers.length === 0) {
-                    resultsList.innerHTML = `<p class="text-gray-500 text-center p-4 text-xl">No customers found.</p><a href="https://www.socialmedium.space/waiver" target="_blank" class="block w-full mt-4 px-8 py-4 text-white bg-green-600 rounded-md hover:bg-green-700 text-xl">Sign the Waiver</a>`;
+                    resultsList.innerHTML = `<p class="text-gray-500 text-center p-4 text-xl">No customers found.</p><a href="https://www.socialmedium.space/waiver" target="_blank" class="block w-full mt-4 px-8 py-4 text-white bg-green-600 rounded-md hover:bg-green-700 text-xl text-center">Sign the Waiver</a>`;
                     checkInSelectedBtn.style.display = 'none';
                     return;
                 }
@@ -390,16 +371,12 @@
             const proceedWithSelection = async () => {
                 if (selectedCustomers.length === 0) return;
                 showLoader('Processing Check-In...');
-                if (!generalCheckInItemId) {
-                    showError("General Check-In item is not configured.");
-                    return;
-                }
                 try {
                     for (const customer of selectedCustomers) {
                         await createItemPurchase(generalCheckInItemId, customer.id);
                     }
                 } catch (error) {
-                    showError(`A general check-in failed: ${error.message}`);
+                    showError(`Check-in failed: ${error.message}`);
                     return;
                 }
                 welcomeCardsContainer.innerHTML = '';
@@ -506,10 +483,11 @@
                 if (!isMember || specialEventItems.length === 0) return '';
 
                 let html = `<div class="mt-4 no-print"><h2 class="text-lg font-semibold text-gray-800 mb-3 text-center">RSVP for Special Events:</h2><div class="grid grid-cols-2 gap-3">`;
+                specialEventButtonsHTML = '';
                 specialEventItems.forEach(item => {
-                    html += `<button class="rsvp-btn p-3 bg-purple-200 text-purple-800 rounded-md hover:bg-purple-300 font-semibold text-sm" data-item-id="${item.id}" data-customer-id="${customer.id}">${item.name}</button>`;
+                    specialEventButtonsHTML += `<button class="rsvp-btn p-3 bg-purple-200 text-purple-800 rounded-md hover:bg-purple-300 font-semibold text-sm" data-item-id="${item.id}" data-customer-id="${customer.id}">${item.name}</button>`;
                 });
-                html += `</div></div>`;
+                html += specialEventButtonsHTML + `</div></div>`;
                 return html;
             };
 
@@ -520,7 +498,6 @@
                 }
 
                 const discountUID = 'MEMBER-RSVP-DISCOUNT';
-
                 const orderPayload = {
                     idempotency_key: crypto.randomUUID(),
                     order: {
@@ -529,9 +506,7 @@
                         line_items: [{
                             catalog_object_id: itemId,
                             quantity: '1',
-                            applied_discounts: [{
-                                discount_uid: discountUID
-                            }]
+                            applied_discounts: [{ discount_uid: discountUID }]
                         }],
                         discounts: [{
                             uid: discountUID,
@@ -551,7 +526,6 @@
                         buttonElement.textContent = '✓ RSVPd';
                     }
                 } catch (error) {
-                    console.error("RSVP failed:", error);
                     if (buttonElement) {
                         buttonElement.className = 'p-3 bg-red-500 text-white rounded-md font-semibold text-sm';
                         buttonElement.textContent = 'Failed';
@@ -561,7 +535,6 @@
                             buttonElement.textContent = 'Retry';
                         }, 3000);
                     }
-                    throw error;
                 }
             };
             
@@ -579,22 +552,14 @@
                     }
                 };
                 try {
-                    const orderData = await apiFetch('/v2/orders', {
-                        method: 'POST', body: JSON.stringify(orderPayload)
-                    });
-                    const payPayload = {
-                        idempotency_key: crypto.randomUUID(),
-                        payment_ids: []
-                    };
-                    await apiFetch(`/v2/orders/${orderData.order.id}/pay`, {
-                        method: 'POST', body: JSON.stringify(payPayload)
-                    });
+                    const orderData = await apiFetch('/v2/orders', { method: 'POST', body: JSON.stringify(orderPayload) });
+                    const payPayload = { idempotency_key: crypto.randomUUID(), payment_ids: [] };
+                    await apiFetch(`/v2/orders/${orderData.order.id}/pay`, { method: 'POST', body: JSON.stringify(payPayload) });
                     if (buttonElement) {
                         buttonElement.className = 'p-3 bg-green-500 text-white rounded-md font-semibold text-sm';
                         buttonElement.textContent = '✓ Recorded';
                     }
                 } catch (error) {
-                    console.error("Check-in failed:", error);
                     if (buttonElement) {
                         buttonElement.className = 'p-3 bg-red-500 text-white rounded-md font-semibold text-sm';
                         buttonElement.textContent = 'Failed';
@@ -624,10 +589,8 @@
                 showStage('search'); 
             });
 
-            // --- Start the application ---
             fetchInitialData();
         });
     </script>
 </body>
 </html>
-
