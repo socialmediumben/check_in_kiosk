@@ -19,7 +19,6 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Proxy for Neon API
 app.all('/api/*', async (req, res) => {
     try {
         const neonPath = req.path.replace('/api', '');
@@ -35,7 +34,7 @@ app.all('/api/*', async (req, res) => {
 
         if (['POST', 'PATCH', 'PUT'].includes(req.method)) {
             fetchOptions.body = JSON.stringify(req.body);
-            console.log(`[DEBUG] Outgoing to Neon:`, JSON.stringify(req.body));
+            console.log(`[DEBUG] Request Body to Neon:`, JSON.stringify(req.body));
         }
 
         const response = await fetch(url, fetchOptions);
