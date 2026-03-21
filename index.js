@@ -34,19 +34,19 @@ app.all('/api/*', async (req, res) => {
 
         if (['POST', 'PATCH', 'PUT'].includes(req.method)) {
             fetchOptions.body = JSON.stringify(req.body);
-            console.log(`[NEON PROXY] Outgoing to Neon:`, JSON.stringify(req.body));
+            console.log(`[NEON PROXY] Body:`, JSON.stringify(req.body));
         }
 
         const response = await fetch(url, fetchOptions);
         const data = await response.json();
 
         if (!response.ok) {
-            console.error(`[NEON PROXY] Error Response (${response.status}):`, JSON.stringify(data));
+            console.error(`[NEON PROXY] Error (${response.status}):`, JSON.stringify(data));
         }
 
         res.status(response.status).json(data);
     } catch (error) {
-        console.error("Proxy Error:", error.message);
+        console.error("Proxy Fatal Error:", error.message);
         res.status(500).json({ error: 'Neon API Connection Failed' });
     }
 });
