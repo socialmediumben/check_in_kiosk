@@ -1,64 +1,59 @@
-// index.js - The final backend server for Render
-
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(cors()); // Enable CORS for all routes
-app.use(express.json()); // Allow the server to read JSON bodies
+app.use(cors());
+app.use(express.json());
 
-// This single route will catch all requests and forward them to Square
+const getNeonAuth = () => {
+    const orgId = process.env.NEON_ORG_ID;
+    const apiKey = process.env.NEON_API_KEY;
+    return Buffer.from(`${orgId}:${apiKey}`).toString('base64');
+};
+
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Full API Proxy with Debug Logging
 app.all('/api/*', async (req, res) => {
-  const accessToken = process.env.SQUARE_ACCESS_TOKEN;
-
-  if (!accessToken) {
-    console.error("Square Access Token is not configured on the server.");
-    return res.status(500).json({ error: 'Server configuration error.' });
-  }
-
-  try {
-    const squareApiPath = req.path.replace('/api', '');
-    const squareApiUrl = new URL(`https://connect.squareup.com${squareApiPath}`);
-    squareApiUrl.search = new URLSearchParams(req.query).toString();
+    const neonPath = req.path.replace('/api', '');
+    const url = `https://api.neoncrm.com${neonPath}${req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : ''}`;
     
-    console.log('Incoming API Request Body:', req.body);
-    
-    // Create an options object for the fetch call
-    const fetchOptions = {
-        method: req.method,
-        headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Square-Version': '2024-07-22',
-            'Content-Type': 'application/json',
+    console.log(`[DEBUG] Incoming ${req.method} request to: ${url}`);
+
+    try {
+        const fetchOptions = {
+            method: req.method,
+            headers: { 
+                'Authorization': `Basic ${getNeonAuth()}`, 
+                'Content-Type': 'application/json' 
+            }
+        };
+
+        if (['POST', 'PATCH', 'PUT'].includes(req.method)) {
+            fetchOptions.body = JSON.stringify(req.body);
+            console.log(`[DEBUG] Request Body: ${JSON.stringify(req.body)}`);
         }
-    };
-    
-    // Conditionally add the body to the options object for non-GET requests
-    if (req.method !== 'GET' && Object.keys(req.body).length > 0) {
-        fetchOptions.body = JSON.stringify(req.body);
+
+        const response = await fetch(url, fetchOptions);
+        const data = await response.json();
+
+        console.log(`[DEBUG] Neon Response Status: ${response.status}`);
+        
+        if (!response.ok) {
+            console.error(`[DEBUG] Neon Error Detail:`, JSON.stringify(data));
+        }
+
+        res.status(response.status).json(data);
+    } catch (error) {
+        console.error("[DEBUG] Proxy Fatal Error:", error.message);
+        res.status(500).json({ error: 'Neon API Connection Failed', details: error.message });
     }
-    
-    console.log('Forwarding Request Options to Square:', fetchOptions);
-
-    const squareResponse = await fetch(squareApiUrl.toString(), fetchOptions);
-
-    const data = await squareResponse.json();
-
-    if (!squareResponse.ok) {
-      return res.status(squareResponse.status).json(data);
-    }
-
-    res.status(200).json(data);
-
-  } catch (error) {
-    console.error("Error proxying to Square:", error);
-    res.status(500).json({ error: 'An internal server error occurred.' });
-  }
 });
 
-app.listen(port, () => {
-  console.log(`Proxy server listening on port ${port}`);
-});
+app.listen(port, () => console.log(`Kiosk Proxy active on port ${port}`));
