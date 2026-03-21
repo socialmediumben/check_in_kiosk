@@ -1,54 +1,275 @@
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Social Medium ID Check-In</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        .stage { display: none; }
+        .active-stage { display: block; }
+        .spinner { border: 4px solid rgba(0,0,0,0.1); width: 32px; height: 32px; border-radius: 50%; border-left-color: #0891b2; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .qrcode-container img { margin: 0 auto; }
 
-const app = express();
-const port = process.env.PORT || 3000;
-
-app.use(cors());
-app.use(express.json());
-
-const getNeonAuth = () => {
-    const orgId = process.env.NEON_ORG_ID;
-    const apiKey = process.env.NEON_API_KEY;
-    return Buffer.from(`${orgId}:${apiKey}`).toString('base64');
-};
-
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-app.all('/api/*', async (req, res) => {
-    try {
-        const neonPath = req.path.replace('/api', '');
-        const url = `https://api.neoncrm.com${neonPath}${req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : ''}`;
-        
-        const fetchOptions = {
-            method: req.method,
-            headers: { 
-                'Authorization': `Basic ${getNeonAuth()}`, 
-                'Content-Type': 'application/json' 
+        /* Nametag Printing Styles */
+        @media print {
+            body * { visibility: hidden; }
+            #nametag-to-print, #nametag-to-print * { visibility: visible; }
+            #nametag-to-print {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                border: none !important;
             }
-        };
+            .no-print { display: none !important; }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex flex-col items-center justify-center min-h-screen p-4 text-center">
 
-        if (['POST', 'PATCH', 'PUT'].includes(req.method)) {
-            fetchOptions.body = JSON.stringify(req.body);
-            console.log(`[NEON PROXY] Outgoing:`, JSON.stringify(req.body));
+    <div id="main-container" class="w-full max-w-lg bg-white p-10 rounded-3xl shadow-2xl no-print">
+        
+        <div id="stage-search" class="stage active-stage">
+            <h1 class="text-4xl font-extrabold text-gray-800 mb-2">Check-In</h1>
+            <p class="text-gray-500 mb-8">Enter your Account ID or Last Name.</p>
+            <input type="text" id="search-input" onkeydown="if(event.key==='Enter') handleSearch()" class="w-full p-5 text-3xl border-2 border-gray-100 rounded-2xl mb-6 text-center focus:border-cyan-500 outline-none transition-all" placeholder="ID or Last Name">
+            <button onclick="handleSearch()" class="w-full py-5 bg-cyan-600 text-white rounded-2xl text-2xl font-bold hover:bg-cyan-700 shadow-lg mb-6">Search</button>
+            <div class="border-t border-gray-100 pt-6">
+                <button onclick="showWaiverOnly()" class="w-full py-4 bg-emerald-600 text-white rounded-2xl text-xl font-bold shadow-md">Sign the Waiver</button>
+            </div>
+        </div>
+
+        <div id="stage-results" class="stage">
+            <h1 class="text-2xl font-bold text-gray-800 mb-4">Select Your Account</h1>
+            <div id="results-list" class="space-y-3 mb-6"></div>
+            <button onclick="showStage('stage-search')" class="text-gray-400 font-semibold hover:underline">Back to Search</button>
+        </div>
+
+        <div id="stage-waiver" class="stage">
+            <h1 class="text-3xl font-bold text-gray-800 mb-4">Sign Waiver</h1>
+            <div id="qrcode-direct" class="qrcode-container mb-6 flex justify-center bg-white p-4 rounded-lg inline-block mx-auto border border-gray-100"></div>
+            <div class="mb-8">
+                <a href="https://socialmedium.app.neoncrm.com/forms/waiver" target="_blank" class="text-cyan-600 font-bold text-lg underline break-all">socialmedium.app.neoncrm.com/forms/waiver</a>
+            </div>
+            <button onclick="showStage('stage-search')" class="w-full py-4 bg-gray-200 text-gray-700 rounded-2xl text-xl font-bold">Back</button>
+        </div>
+
+        <div id="stage-confirm" class="stage">
+            <div id="account-info" class="mb-8"></div>
+            <div id="action-area"></div>
+            <button onclick="showStage('stage-search')" class="mt-8 text-gray-400 font-semibold hover:underline">Start Over</button>
+        </div>
+
+        <div id="stage-success" class="stage">
+            <div class="text-6xl mb-4 text-green-600">✅</div>
+            <h1 class="text-4xl font-bold text-green-600 mb-2">Success!</h1>
+            <p class="text-xl text-gray-600 mb-6" id="success-msg"></p>
+            
+            <div id="nametag-preview" class="mb-6"></div>
+
+            <button onclick="window.print()" class="w-full py-4 bg-blue-600 text-white rounded-2xl text-xl font-bold mb-4">Print Nametag</button>
+            <button onclick="location.reload()" class="w-full py-4 bg-cyan-600 text-white rounded-2xl text-xl font-bold">Next Person <span id="timer">(30)</span></button>
+        </div>
+
+        <div id="loader" class="hidden mt-6 flex flex-col items-center">
+            <div class="spinner"></div>
+            <p class="mt-2 text-gray-500" id="loader-text">Processing...</p>
+        </div>
+    </div>
+
+    <div id="nametag-to-print" class="hidden"></div>
+
+    <script>
+        const API_PROXY_URL = window.location.origin;
+        const WAIVER_FIELD_ID = "87";
+        const INTERESTS_FIELD_ID = "81";
+        const CUSTOM_INTERESTS_FIELD_ID = "83";
+        const SYSTEM_USER_ID = "3508"; 
+        const WAIVER_URL = "https://socialmedium.app.neoncrm.com/forms/waiver";
+        let currentAccount = null;
+
+        async function handleSearch() {
+            const input = document.getElementById('search-input').value.trim();
+            if (!input) return alert("Please enter an ID or Last Name.");
+            setLoading(true, "Searching...");
+            try {
+                if (/^\d+$/.test(input)) {
+                    await fetchAccountById(input);
+                } else {
+                    await searchAccountsByName(input);
+                }
+            } catch (e) {
+                alert("Error: " + e.message);
+            } finally {
+                setLoading(false);
+            }
         }
 
-        const response = await fetch(url, fetchOptions);
-        const data = await response.json();
-
-        if (!response.ok) {
-            console.error(`[NEON PROXY] Error Response (${response.status}):`, JSON.stringify(data));
+        async function fetchAccountById(id) {
+            const res = await fetch(`${API_PROXY_URL}/api/v2/accounts/${id}`);
+            const data = await res.json();
+            if (!res.ok || !data.individualAccount) throw new Error("Account not found.");
+            currentAccount = data.individualAccount;
+            renderConfirmation();
         }
 
-        res.status(response.status).json(data);
-    } catch (error) {
-        console.error("Proxy Error:", error.message);
-        res.status(500).json({ error: 'Neon API Connection Failed' });
-    }
-});
+        async function searchAccountsByName(lastName) {
+            const payload = {
+                "searchFields": [{ "field": "Last Name", "operator": "EQUAL", "value": lastName }],
+                "outputFields": ["First Name", "Last Name", "Account ID"],
+                "pagination": { "currentPage": 0, "pageSize": 50 }
+            };
+            const response = await fetch(`${API_PROXY_URL}/api/v2/accounts/search`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error("Search failed");
+            const accounts = data.searchResults || [];
+            if (accounts.length === 0) throw new Error("No accounts found.");
+            if (accounts.length === 1) {
+                await fetchAccountById(accounts[0]["Account ID"] || accounts[0].accountId);
+            } else {
+                renderResultsList(accounts);
+            }
+        }
 
-app.listen(port, () => console.log(`Kiosk Proxy active on port ${port}`));
+        function renderResultsList(accounts) {
+            const list = document.getElementById('results-list');
+            list.innerHTML = "";
+            accounts.forEach(acc => {
+                const id = acc["Account ID"] || acc.accountId;
+                const btn = document.createElement('button');
+                btn.className = "w-full p-4 bg-gray-50 border border-gray-200 rounded-xl text-left hover:bg-cyan-50 mb-2";
+                btn.innerHTML = `<strong>${acc["First Name"]} ${acc["Last Name"]}</strong><br><small>ID: ${id}</small>`;
+                btn.onclick = () => fetchAccountById(id);
+                list.appendChild(btn);
+            });
+            showStage('stage-results');
+        }
+
+        function generateNametagHTML() {
+            const contact = currentAccount.primaryContact;
+            const fields = currentAccount.accountCustomFields || [];
+            
+            // Extracting Fields
+            const membership = currentAccount.accountCurrentMembershipStatus || "None";
+            const pronouns = contact.gender ? contact.gender.name : "___________";
+            const name = contact.preferredName || contact.firstName;
+
+            // Interests Logic (Combining ID 81 and 83)
+            const interestField = fields.find(f => f.id === INTERESTS_FIELD_ID);
+            const interests = interestField && interestField.optionValues ? 
+                                interestField.optionValues.map(o => o.name).join(", ") : "";
+            
+            const customInterestField = fields.find(f => f.id === CUSTOM_INTERESTS_FIELD_ID);
+            const customInterests = customInterestField ? (customInterestField.value || "") : "";
+
+            const combinedInterests = [interests, customInterests].filter(i => i !== "").join(", ");
+
+            return `
+                <div class="border-8 border-black rounded-3xl p-8 text-left bg-white max-w-2xl mx-auto">
+                    <div class="flex justify-between items-start mb-4">
+                        <div class="text-8xl font-black uppercase tracking-tighter">${name}</div>
+                        <div class="border-4 border-black rounded-full h-24 w-24 flex items-center justify-center text-center text-xs font-bold p-2 leading-none">
+                            ${membership}
+                        </div>
+                    </div>
+                    <div class="text-3xl font-bold mt-2">Pronouns: ${pronouns}</div>
+                    <div class="mt-10">
+                        <div class="text-4xl font-black italic uppercase text-gray-400">I'm Nerdy for...</div>
+                        <div class="text-3xl font-bold mt-2 leading-tight">${combinedInterests || "Everything!"}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderConfirmation() {
+            const info = document.getElementById('account-info');
+            const actions = document.getElementById('action-area');
+            const contact = currentAccount.primaryContact;
+            const waiver = (currentAccount.accountCustomFields || []).find(f => f.id === WAIVER_FIELD_ID);
+            const isSigned = (waiver && waiver.value && waiver.value.trim() !== "") || (waiver && waiver.optionValues && waiver.optionValues.length > 0);
+
+            info.innerHTML = `<div class="text-3xl font-bold text-gray-800">${contact.firstName} ${contact.lastName}</div><div class="text-lg text-gray-500 mt-2">ID: ${currentAccount.accountId}</div>`;
+
+            if (isSigned) {
+                actions.innerHTML = `<button onclick="confirmCheckIn()" class="w-full py-5 bg-cyan-600 text-white rounded-2xl text-2xl font-bold shadow-lg">Confirm Check-In</button>`;
+            } else {
+                actions.innerHTML = `<div class="bg-red-50 text-red-700 p-6 rounded-xl"><div id="qrcode-confirm" class="qrcode-container mb-6 flex justify-center bg-white p-4 rounded-lg inline-block mx-auto"></div><a href="${WAIVER_URL}" target="_blank" class="font-bold underline">Sign Waiver</a></div>`;
+                setTimeout(() => {
+                    new QRCode(document.getElementById("qrcode-confirm"), { text: WAIVER_URL, width: 160, height: 160 });
+                }, 50);
+            }
+            showStage('stage-confirm');
+        }
+
+        async function confirmCheckIn() {
+            setLoading(true, "Checking in...");
+            const now = new Date();
+            const dateOptions = { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' };
+            const parts = new Intl.DateTimeFormat('en-US', dateOptions).formatToParts(now);
+            const d = `${parts.find(p => p.type === 'year').value}-${parts.find(p => p.type === 'month').value}-${parts.find(p => p.type === 'day').value}`;
+            const t = now.toLocaleTimeString('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', minute: '2-digit', hour12: true });
+
+            const payload = {
+                "subject": "Check-In",
+                "activityDates": { "startDate": d, "startTime": t, "timeZone": { "id": "1" } },
+                "clientAccount": [{ "accountId": String(currentAccount.accountId) }],
+                "systemUserId": [ String(SYSTEM_USER_ID) ],
+                "status": { "id": "4" },
+                "priority": "Low"
+            };
+
+            try {
+                const response = await fetch(`${API_PROXY_URL}/api/v2/activities`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                if (!response.ok) throw new Error("Check-in failed");
+                
+                // Set success message and generate nametag
+                document.getElementById('success-msg').textContent = `${currentAccount.primaryContact.firstName} checked in!`;
+                const tagHTML = generateNametagHTML();
+                document.getElementById('nametag-preview').innerHTML = tagHTML;
+                document.getElementById('nametag-to-print').innerHTML = tagHTML;
+                
+                showStage('stage-success');
+                startResetTimer();
+            } catch (e) {
+                alert("Error: " + e.message);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        function startResetTimer() {
+            let timeLeft = 30;
+            const timerEl = document.getElementById('timer');
+            const interval = setInterval(() => {
+                timeLeft--;
+                if (timerEl) timerEl.textContent = `(${timeLeft})`;
+                if (timeLeft <= 0) { clearInterval(interval); location.reload(); }
+            }, 1000);
+        }
+
+        function showStage(id) {
+            document.querySelectorAll('.stage').forEach(s => s.classList.remove('active-stage'));
+            document.getElementById(id).classList.add('active-stage');
+        }
+
+        function setLoading(show, text) {
+            document.getElementById('loader').classList.toggle('hidden', !show);
+            document.getElementById('loader-text').textContent = text;
+        }
+
+        function showWaiverOnly() {
+            showStage('stage-waiver');
+            const container = document.getElementById("qrcode-direct");
+            container.innerHTML = "";
+            new QRCode(container, { text: WAIVER_URL, width: 180, height: 180 });
+        }
+    </script>
+</body>
+</html>
