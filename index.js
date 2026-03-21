@@ -19,14 +19,12 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Full API Proxy with Debug Logging
+// Proxy for Neon API
 app.all('/api/*', async (req, res) => {
-    const neonPath = req.path.replace('/api', '');
-    const url = `https://api.neoncrm.com${neonPath}${req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : ''}`;
-    
-    console.log(`[DEBUG] Incoming ${req.method} request to: ${url}`);
-
     try {
+        const neonPath = req.path.replace('/api', '');
+        const url = `https://api.neoncrm.com${neonPath}${req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : ''}`;
+        
         const fetchOptions = {
             method: req.method,
             headers: { 
@@ -37,22 +35,20 @@ app.all('/api/*', async (req, res) => {
 
         if (['POST', 'PATCH', 'PUT'].includes(req.method)) {
             fetchOptions.body = JSON.stringify(req.body);
-            console.log(`[DEBUG] Request Body: ${JSON.stringify(req.body)}`);
+            console.log(`[DEBUG] Forwarding to Neon:`, JSON.stringify(req.body));
         }
 
         const response = await fetch(url, fetchOptions);
         const data = await response.json();
 
-        console.log(`[DEBUG] Neon Response Status: ${response.status}`);
-        
         if (!response.ok) {
-            console.error(`[DEBUG] Neon Error Detail:`, JSON.stringify(data));
+            console.error(`[DEBUG] Neon Error (${response.status}):`, JSON.stringify(data));
         }
 
         res.status(response.status).json(data);
     } catch (error) {
         console.error("[DEBUG] Proxy Fatal Error:", error.message);
-        res.status(500).json({ error: 'Neon API Connection Failed', details: error.message });
+        res.status(500).json({ error: 'Neon API Connection Failed' });
     }
 });
 
