@@ -19,7 +19,6 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Proxy for Neon API with server-side debugging
 app.all('/api/*', async (req, res) => {
     try {
         const neonPath = req.path.replace('/api', '');
@@ -35,19 +34,19 @@ app.all('/api/*', async (req, res) => {
 
         if (['POST', 'PATCH', 'PUT'].includes(req.method)) {
             fetchOptions.body = JSON.stringify(req.body);
-            console.log(`[SERVER DEBUG] Outgoing Payload:`, JSON.stringify(req.body));
+            console.log(`[DEBUG] Outgoing:`, JSON.stringify(req.body));
         }
 
         const response = await fetch(url, fetchOptions);
         const data = await response.json();
 
         if (!response.ok) {
-            console.error(`[SERVER DEBUG] Neon Error (${response.status}):`, JSON.stringify(data));
+            console.error(`[DEBUG] Neon Error (${response.status}):`, JSON.stringify(data));
         }
 
         res.status(response.status).json(data);
     } catch (error) {
-        console.error("[SERVER DEBUG] Proxy Fatal Error:", error.message);
+        console.error("[DEBUG] Proxy Fatal Error:", error.message);
         res.status(500).json({ error: 'Neon API Connection Failed' });
     }
 });
