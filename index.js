@@ -19,6 +19,7 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+// Full API Proxy for account lookups and activities
 app.all('/api/*', async (req, res) => {
     try {
         const neonPath = req.path.replace('/api', '');
