@@ -19,7 +19,6 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Full API Proxy for account lookups and activities
 app.all('/api/*', async (req, res) => {
     try {
         const neonPath = req.path.replace('/api', '');
@@ -35,7 +34,7 @@ app.all('/api/*', async (req, res) => {
 
         if (['POST', 'PATCH', 'PUT'].includes(req.method)) {
             fetchOptions.body = JSON.stringify(req.body);
-            console.log(`[NEON PROXY] Request Body:`, JSON.stringify(req.body));
+            console.log(`[NEON PROXY] Outgoing:`, JSON.stringify(req.body));
         }
 
         const response = await fetch(url, fetchOptions);
