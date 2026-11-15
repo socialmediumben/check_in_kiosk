@@ -15,6 +15,8 @@ const getNeonAuth = () => {
     return Buffer.from(`${orgId}:${apiKey}`).toString('base64');
 };
 
+app.use('/buddies', express.static(path.join(__dirname, 'buddies')));
+
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
