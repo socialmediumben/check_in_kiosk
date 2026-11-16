@@ -22,10 +22,12 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
+            justify-content: space-between;
             width: 100%;
-            margin: 0 0 16px 0;
-            padding: 16px 14px;
+            height: 100%;
+            min-height: 100%;
+            margin: 0;
+            padding: 14px 12px;
             background: radial-gradient(circle at center, rgba(59, 192, 205, 0.12) 0%, rgba(248, 250, 252, 0.95) 85%);
             border: 1.5px solid rgba(59, 192, 205, 0.35);
             border-radius: 16px;
@@ -289,18 +291,37 @@
                 props: 110
             };
 
-            const MAKER_XP_LEVEL_TIERS = [
-                { level: 1, title: 'Novice Maker', minXp: 0, badgeEmoji: '🌱' },
-                { level: 2, title: 'Apprentice Tinkerer', minXp: 50, badgeEmoji: '🔨' },
-                { level: 3, title: 'Craftsperson', minXp: 125, badgeEmoji: '⚙️' },
-                { level: 4, title: 'Journeyman Builder', minXp: 250, badgeEmoji: '🧰' },
-                { level: 5, title: 'Artisan Specialist', minXp: 450, badgeEmoji: '🎨' },
-                { level: 6, title: 'Senior Fabricator', minXp: 700, badgeEmoji: '🚀' },
-                { level: 7, title: 'Master Engineer', minXp: 1000, badgeEmoji: '⚡' },
-                { level: 8, title: 'Visionary Inventor', minXp: 1400, badgeEmoji: '💡' },
-                { level: 9, title: 'Mythic Artificer', minXp: 1850, badgeEmoji: '🔮' },
-                { level: 10, title: 'Grandmaster Architect', minXp: 2400, badgeEmoji: '👑' }
+            let MAKER_XP_LEVEL_TIERS = [
+                { level: 1, title: 'Level 1', minXp: 0, badgeEmoji: '🌱' },
+                { level: 2, title: 'Level 2', minXp: 50, badgeEmoji: '🔨' },
+                { level: 3, title: 'Level 3', minXp: 250, badgeEmoji: '⚙️' },
+                { level: 4, title: 'Level 4', minXp: 500, badgeEmoji: '🧰' },
+                { level: 5, title: 'Level 5', minXp: 1000, badgeEmoji: '🎨' },
+                { level: 6, title: 'Level 6', minXp: 1500, badgeEmoji: '🚀' },
+                { level: 7, title: 'Level 7', minXp: 2000, badgeEmoji: '⚡' },
+                { level: 8, title: 'Level 8', minXp: 5000, badgeEmoji: '💡' },
+                { level: 9, title: 'Level 9', minXp: 10000, badgeEmoji: '🔮' },
+                { level: 10, title: 'Level 10', minXp: 25000, badgeEmoji: '👑' }
             ];
+
+            const loadGlobalLevelTiers = async () => {
+                try {
+                    const settingsUrl = 'https://neon-kiosk.onrender.com/api/app-settings?_t=' + Date.now();
+                    const res = await fetch(settingsUrl, { cache: 'no-store' });
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    if (data.settings && Array.isArray(data.settings.levelTiers) && data.settings.levelTiers.length > 0) {
+                        MAKER_XP_LEVEL_TIERS = data.settings.levelTiers.map(t => ({
+                            level: t.level,
+                            title: t.title || `Level ${t.level}`,
+                            minXp: Number(t.minXp) || 0,
+                            badgeEmoji: t.badgeEmoji || '🌱'
+                        })).sort((a, b) => a.minXp - b.minXp);
+                    }
+                } catch (err) {
+                    console.warn('[Global Level Tiers Notice]:', err);
+                }
+            };
 
             let buddyDatabase = {
                 'sheet_1_basic_buddy': { id: 'sheet_1_basic_buddy', name: 'Basic Buddy', category: 'base_body', assetUrl: 'buddies/basic_buddy.png', zIndex: 30 },
@@ -410,13 +431,14 @@
                     if (!rows || rows.length < 2) return;
 
                     const header = rows[0].map(h => String(h || '').trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
-                    let nameIdx = -1, catIdx = -1, urlIdx = -1, activeIdx = -1;
+                    let nameIdx = -1, catIdx = -1, urlIdx = -1, activeIdx = -1, colorPickerIdx = -1;
                     for (let i = 0; i < header.length; i++) {
                         const col = header[i];
                         if (col.includes('name') || col.includes('item') || col.includes('title')) nameIdx = i;
                         else if (col.includes('cat') || col.includes('layer') || col.includes('type')) catIdx = i;
                         else if (col.includes('url') || col.includes('asset') || col.includes('image') || col.includes('link') || col.includes('file')) urlIdx = i;
                         else if (col.includes('active') || col.includes('status') || col.includes('enable')) activeIdx = i;
+                        else if (col.includes('colorpick') || col.includes('tintable') || col === 'picker' || col === 'tint') colorPickerIdx = i;
                     }
 
                     if (nameIdx === -1 || urlIdx === -1) return;
@@ -436,6 +458,12 @@
                         let assetUrl = String(row[urlIdx] || '').trim();
                         if (!assetUrl) continue;
 
+                        let colorPicker = false;
+                        if (colorPickerIdx !== -1) {
+                            const cpVal = String(row[colorPickerIdx] || '').trim().toLowerCase();
+                            colorPicker = ['true', '1', 'yes', 'y'].includes(cpVal);
+                        }
+
                         const resolvedUrl = resolveBuddyAssetUrl(assetUrl);
                         const zIndex = BUDDY_CATEGORY_LAYER_ORDER[cat] || 50;
                         const id = `sheet_${r}_${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
@@ -445,7 +473,8 @@
                             name: name,
                             category: cat,
                             assetUrl: resolvedUrl,
-                            zIndex: zIndex
+                            zIndex: zIndex,
+                            colorPicker: colorPicker
                         };
                     }
                 } catch (err) {
@@ -485,7 +514,9 @@
                                 { field: 'First Name', operator: 'CONTAIN', value: customer.given_name.trim() }
                             ];
                             if (customer.family_name) {
-                                searchFields.push({ field: 'Last Name', operator: 'CONTAIN', value: customer.family_name.trim() });
+                                // Support hyphenated or multi-part last names by matching primary surname token
+                                const lastNamePart = customer.family_name.trim().split(/[\s-]+/)[0];
+                                searchFields.push({ field: 'Last Name', operator: 'CONTAIN', value: lastNamePart });
                             }
                             const nameRes = await fetch(`${NEON_API_URL}/api/v2/accounts/search`, {
                                 method: 'POST',
@@ -500,6 +531,30 @@
                                 const data = await nameRes.json();
                                 if (data.searchResults && data.searchResults.length > 0) {
                                     matchedAccountId = data.searchResults[0]['Account ID'];
+                                }
+                            }
+                        } catch (_) {}
+                    }
+
+                    // 3. Search by Tap Card or Phone if still not found
+                    if (!matchedAccountId && (customer.note || customer.phone_number)) {
+                        try {
+                            const cardMatch = (customer.note || '').match(/\b\d{8,10}\b/);
+                            if (cardMatch) {
+                                const cardRes = await fetch(`${NEON_API_URL}/api/v2/accounts/search`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        searchFields: [{ field: 'Tap Card', operator: 'EQUAL', value: cardMatch[0] }],
+                                        outputFields: ['Account ID'],
+                                        pagination: { currentPage: 0, pageSize: 1 }
+                                    })
+                                });
+                                if (cardRes.ok) {
+                                    const cData = await cardRes.json();
+                                    if (cData.searchResults && cData.searchResults.length > 0) {
+                                        matchedAccountId = cData.searchResults[0]['Account ID'];
+                                    }
                                 }
                             }
                         } catch (_) {}
@@ -593,11 +648,23 @@
 
                 layers.sort((a, b) => (a.zIndex || 50) - (b.zIndex || 50));
 
-                const accessoriesHtml = layers.map(l => `
-                    <div class="profile-buddy-layer" style="z-index: ${l.zIndex || 50};">
-                        <img class="profile-buddy-img" src="${l.assetUrl}" alt="${escapeHtml(l.name || 'Accessory')}" onerror="this.onerror=null; this.src='https://app.socialmedium.space/${l.assetUrl.replace(/^buddies\//, 'buddies/')}';" />
-                    </div>
-                `).join('');
+                const accessoriesHtml = layers.map(l => {
+                    const isTinted = l.colorPicker || (config.equippedColors && (config.equippedColors[l.category] || config.equippedColors[l.id]));
+                    const layerColorHex = (config.equippedColors && (config.equippedColors[l.category] || config.equippedColors[l.id])) || (l.colorPicker ? '#ffffff' : null);
+                    if (isTinted && layerColorHex) {
+                        return `
+                            <div class="profile-buddy-layer" style="z-index: ${l.zIndex || 50}; isolation: isolate;">
+                                <div class="profile-buddy-color-mask" style="background-color: ${layerColorHex}; -webkit-mask: url('${l.assetUrl}') center/contain no-repeat; mask: url('${l.assetUrl}') center/contain no-repeat;"></div>
+                                <img class="profile-buddy-img" style="mix-blend-mode: multiply;" src="${l.assetUrl}" alt="${escapeHtml(l.name || 'Accessory')}" onerror="this.onerror=null; this.src='https://app.socialmedium.space/${l.assetUrl.replace(/^buddies\//, 'buddies/')}';" />
+                            </div>
+                        `;
+                    }
+                    return `
+                        <div class="profile-buddy-layer" style="z-index: ${l.zIndex || 50};">
+                            <img class="profile-buddy-img" src="${l.assetUrl}" alt="${escapeHtml(l.name || 'Accessory')}" onerror="this.onerror=null; this.src='https://app.socialmedium.space/${l.assetUrl.replace(/^buddies\//, 'buddies/')}';" />
+                        </div>
+                    `;
+                }).join('');
 
                 const levelTier = getMakerLevelFromXp(xp);
                 const rgb = hexToRgbNormalized(baseColorHex);
@@ -717,6 +784,7 @@
                     await fetchSpecialEvents();
                     await fetchLockerRentalInfo();
                     await fetchLocationId();
+                    await loadGlobalLevelTiers();
                     await loadBuddyDatabase();
                     
                     showStage('search');
@@ -960,7 +1028,19 @@
                 const rsvpButtons = getEventRsvpButtonsHTML(customer);
                 const printButton = `<div class="mt-4 no-print"><button class="print-btn w-full p-4 bg-cyan-600 text-white rounded-xl hover:bg-cyan-700 font-bold text-lg shadow-md transition-all flex items-center justify-center gap-2"><span>🖨️</span><span>Print Nametag</span></button></div>`;
                 
-                card.innerHTML = buddyAvatarHtml + nametagContent + checkInButtons + rsvpButtons + printButton;
+                card.innerHTML = `
+                    <div class="flex flex-col md:flex-row items-center md:items-stretch gap-4 w-full">
+                        <div class="no-print flex-shrink-0 w-full md:w-56 flex flex-col justify-between">
+                            ${buddyAvatarHtml}
+                        </div>
+                        <div class="flex-grow min-w-0 w-full">
+                            ${nametagContent}
+                        </div>
+                    </div>
+                    ${checkInButtons}
+                    ${rsvpButtons}
+                    ${printButton}
+                `;
 
                 card.querySelectorAll('.check-in-btn').forEach(button => {
                     button.onclick = () => createItemPurchase(button.dataset.itemId, button.dataset.customerId, button);
