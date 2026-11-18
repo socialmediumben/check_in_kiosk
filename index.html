@@ -1047,7 +1047,35 @@
             };
 
             // --- Core Application Logic ---
+            const SANDBOX_CUSTOMER = {
+                id: "sandbox_customer",
+                given_name: "Jordan",
+                family_name: "Taylor",
+                email_address: "jordan.taylor@demo-partner.com",
+                phone_number: "+15552345678",
+                note: "Tap Card: DEMO-2026",
+                segment_ids: ["current_pro_maker", currentMemberSegmentId],
+                cards: [{ id: "ccof:sandbox", card_brand: "VISA", last_4: "4242" }],
+                custom_attributes: {
+                    [newWaiverCustomAttributeKey]: {
+                        key: newWaiverCustomAttributeKey,
+                        value: true
+                    },
+                    [pronounsCustomAttributeKey]: {
+                        key: pronounsCustomAttributeKey,
+                        value: "They/Them"
+                    },
+                    [customInterestsAttributeKey]: {
+                        key: customInterestsAttributeKey,
+                        value: "3D Printing, Laser Cutting, Woodworking, Electronics"
+                    }
+                }
+            };
+
             const getFullCustomerProfile = async (customerId) => {
+                if (customerId === 'sandbox_customer') {
+                    return SANDBOX_CUSTOMER;
+                }
                 const fullCustomerProfileResponse = await apiFetch(`/v2/customers/${customerId}`);
                 const fullCustomer = fullCustomerProfileResponse.customer;
 
@@ -1068,17 +1096,8 @@
 
                 const cleanLowerSearch = searchValue.toLowerCase().replace(/[^a-z0-9]/g, '');
                 if (['demo', 'sandbox', 'test', 'demo2026', '5552345678'].includes(cleanLowerSearch)) {
-                    selectedCustomers = [];
-                    renderResultsList([{
-                        id: "sandbox_customer",
-                        given_name: "Jordan",
-                        family_name: "Taylor",
-                        email_address: "jordan.taylor@demo-partner.com",
-                        phone_number: "+15552345678",
-                        note: "Tap Card: DEMO-2026",
-                        segment_ids: ["current_pro_maker"],
-                        cards: [{ id: "ccof:sandbox", card_brand: "VISA", last_4: "4242" }]
-                    }]);
+                    searchedCustomers = [SANDBOX_CUSTOMER];
+                    displayCustomerResults();
                     hideLoader();
                     showStage('results');
                     return;
@@ -1273,6 +1292,9 @@
 
             const getNameTagHTML = (customer) => {
                 let membershipType = 'No Current Membership';
+                if (customer.id === 'sandbox_customer') {
+                    membershipType = 'Pro Maker';
+                }
                 const segmentIds = customer.segment_ids || [];
                 segmentIds.forEach(id => {
                     const name = allListsMap.get(id) || '';
@@ -1331,7 +1353,7 @@
             };
 
             const getEventRsvpButtonsHTML = (customer) => {
-                const isMember = customer.segment_ids && customer.segment_ids.includes(currentMemberSegmentId);
+                const isMember = customer.id === 'sandbox_customer' || (customer.segment_ids && customer.segment_ids.includes(currentMemberSegmentId));
                 if (!isMember || specialEventItems.length === 0) return '';
 
                 let html = `<div class="mt-4 no-print"><h2 class="text-lg font-semibold text-gray-800 mb-3 text-center">RSVP for Special Events:</h2><div class="grid grid-cols-2 gap-3">`;
@@ -1347,6 +1369,16 @@
                 if (buttonElement) {
                     buttonElement.disabled = true;
                     buttonElement.innerHTML = '<div class="flex justify-center items-center"><div class="spinner"></div></div>';
+                }
+
+                if (customerId === 'sandbox_customer') {
+                    setTimeout(() => {
+                        if (buttonElement) {
+                            buttonElement.className = 'p-3 bg-green-500 text-white rounded-md font-semibold text-sm';
+                            buttonElement.textContent = '✓ RSVPd';
+                        }
+                    }, 350);
+                    return;
                 }
 
                 const discountUID = 'MEMBER-RSVP-DISCOUNT';
@@ -1395,6 +1427,17 @@
                     buttonElement.disabled = true;
                     buttonElement.innerHTML = '<div class="flex justify-center items-center"><div class="spinner"></div></div>';
                 }
+
+                if (customerId === 'sandbox_customer') {
+                    setTimeout(() => {
+                        if (buttonElement) {
+                            buttonElement.className = 'p-3 bg-green-500 text-white rounded-md font-semibold text-sm';
+                            buttonElement.textContent = '✓ Recorded';
+                        }
+                    }, 350);
+                    return;
+                }
+
                 const orderPayload = {
                     idempotency_key: crypto.randomUUID(),
                     order: {
