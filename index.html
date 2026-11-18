@@ -651,6 +651,26 @@
 
             const fetchNeonProfile = async (customer) => {
                 try {
+                    if (customer.id === 'sandbox_customer' || (customer.note || '').includes('DEMO-2026')) {
+                        return {
+                            accountId: "sandbox-demo",
+                            buddyAvatar: {
+                                bodyColor: "#3bc0cd",
+                                eyeStyle: "happy",
+                                mouthStyle: "smile",
+                                clothes: "apron",
+                                hat: "goggles",
+                                shoes: "sneakers",
+                                accessory: "wrench"
+                            },
+                            buddyBucks: 175,
+                            xp: 420,
+                            level: 3,
+                            levelTitle: "Apprentice Tinkerer",
+                            levelBadge: "⚙️",
+                            certifications: ["Laser Cutter (CO2 80W)", "3D Printing (FDM / Bambu Lab)", "Woodshop Safety & Table Saw", "Electronics & Soldering Bench", "Vinyl Cutter & Heat Press"]
+                        };
+                    }
                     let matchedAccountId = null;
 
                     // 1. If customer has an email from Square, try exact Email 1 search in Neon
@@ -1045,6 +1065,24 @@
                 const searchValue = document.getElementById('search-value').value.trim();
                 if (!searchValue) return;
                 showLoader('Searching...');
+
+                const cleanLowerSearch = searchValue.toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (['demo', 'sandbox', 'test', 'demo2026', '5552345678'].includes(cleanLowerSearch)) {
+                    selectedCustomers = [];
+                    renderResultsList([{
+                        id: "sandbox_customer",
+                        given_name: "Jordan",
+                        family_name: "Taylor",
+                        email_address: "jordan.taylor@demo-partner.com",
+                        phone_number: "+15552345678",
+                        note: "Tap Card: DEMO-2026",
+                        segment_ids: ["current_pro_maker"],
+                        cards: [{ id: "ccof:sandbox", card_brand: "VISA", last_4: "4242" }]
+                    }]);
+                    hideLoader();
+                    showStage('results');
+                    return;
+                }
                 let formattedPhone = searchValue.replace(/\D/g, '');
                 if (formattedPhone.length === 10) formattedPhone = `+1${formattedPhone}`;
                 else if (!searchValue.startsWith('+')) formattedPhone = `+${formattedPhone}`;
@@ -1166,6 +1204,10 @@
                 showLoader('Processing Check-In...');
                 try {
                     await Promise.all(selectedCustomers.map(async (customer) => {
+                        if (customer.id === 'sandbox_customer') {
+                            customer.neonProfile = await fetchNeonProfile(customer);
+                            return;
+                        }
                         const [, neonProfile] = await Promise.all([
                             createItemPurchase(generalCheckInItemId, customer.id),
                             fetchNeonProfile(customer)
